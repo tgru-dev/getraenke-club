@@ -1,4 +1,7 @@
-# Getränke-Strichliste
+<div align="center">
+  <img src="assets/icon-256.png" alt="Getränke-Club Logo" width="160" />
+  <h1>Getränke-Club Strichliste</h1>
+</div>
 
 Web-App, die die Papier-Strichliste im Jugendclub ablöst.
 
@@ -22,6 +25,7 @@ Vollständiger Plan: [`plan.md`](./plan.md).
 - iron-session + bcryptjs (PIN-Login)
 - `@zxing/browser` (Barcode-Erkennung)
 - OpenGTIN-DB als Produkt-Lookup, lokal 30 Tage gecached
+- PWA: Web-Manifest + Service Worker + Offline-Buchungs-Queue im Browser
 
 ## Wichtige Pfade
 
@@ -78,6 +82,20 @@ App läuft auf <http://localhost:3000>. Default-Admin: **Name `Admin`, PIN `0000
   ist über das Kontaktformular bei [opengtindb.org](https://opengtindb.org/)
   kostenlos erhältlich. Ohne Schlüssel liefert die API `error=5` und der
   Scanner fällt sofort auf manuelle Eingabe zurück (funktioniert ebenfalls).
+
+### PWA / Add to Homescreen
+
+- App lässt sich auf iOS und Android über das Browsermenü als Icon auf den
+  Homescreen legen ("Zum Home-Bildschirm hinzufügen"). Sie startet dann ohne
+  Browserleisten, mit dem `assets/icon-256.png`-Logo und dunklem Theme.
+- Beim ersten Öffnen über HTTPS registriert die App einen Service Worker, der
+  die App-Shell offline-fähig macht und bei Verbindungsabbruch die Seite
+  `/offline` ausliefert.
+- **Offline-Buchungen:** Tippt ein Mitglied ohne Verbindung eine Kategorie an,
+  wird der Strich optimistisch gezählt und in der lokalen Queue gepuffert.
+  Sobald die Verbindung zurück ist (Browser-`online`-Event oder periodischer
+  Retry alle 30 s), werden offene Buchungen automatisch nachgereicht. Im UI
+  zeigt ein gelber Banner die Anzahl ausstehender Buchungen; rot bei Offline.
 
 ### Tresenmodus
 
@@ -277,4 +295,6 @@ sudo systemctl restart drinks
 - [x] Phase 2 – Tresenmodus (Tablet-Kiosk ohne Scanner), 30-Tage-Trend im Admin
 - [x] Phase 3 – Barcode-Scanner mit OpenGTIN (Mitglieder-Smartphone),
       Produkt-/Barcode-Verwaltung im Admin, BarcodeCache mit 30 Tagen TTL
-- [ ] Phase 4 – Polish, PWA, Offline-Sync
+- [x] Phase 4 – PWA-Manifest + App-Icon (iOS/Android-Add-to-Homescreen),
+      Service Worker für Offline-Shell + `/offline`-Fallback, Offline-Queue
+      für Tally-Buchungen mit automatischem Retry und Status-Banner

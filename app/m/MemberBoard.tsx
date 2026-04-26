@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PinChangeDialog } from "@/components/PinChangeDialog";
+import {
+  enqueue,
+  flushQueue,
+  getQueueFor,
+  newId,
+  removeById,
+  type QueuedTally,
+} from "@/lib/offlineQueue";
 
 type Category = {
   id: string;
@@ -31,7 +39,60 @@ export function MemberBoard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPinChange, setShowPinChange] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshPending = useCallback(() => {
+    setPendingCount(getQueueFor(name).length);
+  }, [name]);
+
+  const flush = useCallback(async () => {
+    const result = await flushQueue(name);
+    refreshPending();
+    if (result.authError) {
+      router.replace("/login");
+      return;
+    }
+    if (result.sent > 0) {
+      router.refresh();
+    }
+  }, [name, refreshPending, router]);
+
+  // Online-/Offline-Status verfolgen + Queue-Replay
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    setOnline(navigator.onLine);
+    refreshPending();
+
+    const onOnline = () => {
+      setOnline(true);
+      void flush();
+    };
+    const onOffline = () => setOnline(false);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void flush();
+    };
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    // erster Replay-Versuch direkt nach Mount
+    void flush();
+
+    // periodisch versuchen, solange Einträge offen sind
+    const t = setInterval(() => {
+      if (getQueueFor(name).length > 0) void flush();
+    }, 30_000);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearInterval(t);
+    };
+  }, [flush, name, refreshPending]);
 
   const clearLast = useCallback(() => {
     setLast(null);
@@ -41,6 +102,13 @@ export function MemberBoard({
     }
   }, []);
 
+  function bumpCount(categoryId: string, delta: number) {
+    setCounts((c) => ({
+      ...c,
+      [categoryId]: Math.max(0, (c[categoryId] ?? 0) + delta),
+    }));
+  }
+
   async function tap(category: Category) {
     if (busy) return;
     setBusy(true);
@@ -48,26 +116,42 @@ export function MemberBoard({
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       navigator.vibrate?.(30);
     }
+
+    // Optimistisch zählen
+    bumpCount(category.id, +1);
+    const queued: QueuedTally = {
+      id: newId(),
+      userName: name,
+      categoryId: category.id,
+      source: "tap",
+      createdAt: new Date().toISOString(),
+    };
+
     try {
       const res = await fetch("/api/tallies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ categoryId: category.id, source: "tap" }),
       });
+
+      if (res.status === 401) {
+        bumpCount(category.id, -1);
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 429) {
+        bumpCount(category.id, -1);
+        setError("Zu schnell – kurz warten.");
+        return;
+      }
       if (!res.ok) {
-        if (res.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (res.status === 429) {
-          setError("Zu schnell – kurz warten.");
-          return;
-        }
+        // Server hat geantwortet aber abgelehnt -> nicht in die Offline-Queue
+        bumpCount(category.id, -1);
         setError("Konnte nicht gespeichert werden.");
         return;
       }
+
       const data = (await res.json()) as { id: string };
-      setCounts((c) => ({ ...c, [category.id]: (c[category.id] ?? 0) + 1 }));
       setLast({
         tallyId: data.id,
         categoryId: category.id,
@@ -75,6 +159,11 @@ export function MemberBoard({
       });
       if (undoTimer.current) clearTimeout(undoTimer.current);
       undoTimer.current = setTimeout(() => setLast(null), 6000);
+    } catch {
+      // Netzwerk weg -> in Offline-Queue legen, optimistic count behalten
+      enqueue(queued);
+      refreshPending();
+      setError("Offline – wird automatisch nachgereicht.");
     } finally {
       setBusy(false);
     }
@@ -86,10 +175,7 @@ export function MemberBoard({
     clearLast();
     const res = await fetch(`/api/tallies/${target.tallyId}`, { method: "DELETE" });
     if (res.ok) {
-      setCounts((c) => ({
-        ...c,
-        [target.categoryId]: Math.max(0, (c[target.categoryId] ?? 1) - 1),
-      }));
+      bumpCount(target.categoryId, -1);
     } else {
       setError("Rückgängig fehlgeschlagen.");
     }
@@ -98,6 +184,13 @@ export function MemberBoard({
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.replace("/login");
+  }
+
+  function dropPending() {
+    if (!window.confirm(`${pendingCount} ausstehende Buchung(en) verwerfen?`)) return;
+    for (const item of getQueueFor(name)) removeById(item.id);
+    refreshPending();
+    router.refresh();
   }
 
   useEffect(() => {
@@ -136,6 +229,27 @@ export function MemberBoard({
           </button>
         </div>
       </header>
+
+      {(!online || pendingCount > 0) && (
+        <div
+          className={`mb-3 flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs ${
+            online
+              ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
+              : "bg-red-500/10 text-red-300 ring-1 ring-red-500/30"
+          }`}
+        >
+          <span>
+            {online
+              ? `${pendingCount} Buchung(en) werden nachgereicht …`
+              : `Offline · ${pendingCount} ausstehend`}
+          </span>
+          {pendingCount > 0 && (
+            <button onClick={dropPending} className="underline">
+              verwerfen
+            </button>
+          )}
+        </div>
+      )}
 
       <p className="mb-2 text-sm text-neutral-400">Heute</p>
       <div className="grid grid-cols-2 gap-3">
