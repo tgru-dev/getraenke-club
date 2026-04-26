@@ -52,15 +52,17 @@ model Product {
 }
 
 model Tally {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
   categoryId String
   productId  String?
-  source     String   @default("tap") // "tap" | "scan" | "admin" | "kiosk"
-  amount     Int      @default(1)
+  source     String    @default("tap") // "tap" | "scan" | "admin" | "kiosk"
+  amount     Int       @default(1)
   note       String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   createdBy  String? // userId des Admins, falls nachträglich gebucht
+  deletedAt  DateTime?
+  deletedBy  String? // userId der Person, die rückgängig gemacht hat
 
   user     User      @relation(fields: [userId], references: [id])
   category Category  @relation(fields: [categoryId], references: [id])
@@ -68,6 +70,7 @@ model Tally {
 
   @@index([userId, createdAt])
   @@index([categoryId, createdAt])
+  @@index([deletedAt])
 }
 
 model AuditLog {

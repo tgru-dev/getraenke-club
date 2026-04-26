@@ -30,6 +30,7 @@ export async function GET(req: Request) {
   const tallies = await prisma.tally.findMany({
     where: {
       createdAt: { gte: from, lte: to },
+      deletedAt: null,
       ...(userId ? { userId } : {}),
     },
     orderBy: { createdAt: "asc" },

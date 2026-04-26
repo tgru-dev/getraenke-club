@@ -63,7 +63,11 @@ export async function GET() {
 
   const todayCounts = await prisma.tally.groupBy({
     by: ["categoryId"],
-    where: { userId: session.userId, createdAt: { gte: start } },
+    where: {
+      userId: session.userId,
+      createdAt: { gte: start },
+      deletedAt: null,
+    },
     _count: { _all: true },
   });
 

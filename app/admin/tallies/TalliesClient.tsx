@@ -13,6 +13,8 @@ type RecentRow = {
   source: string;
   note: string | null;
   createdAt: string;
+  deletedAt: string | null;
+  deletedByName: string | null;
 };
 
 export function TalliesClient({
@@ -185,36 +187,69 @@ export function TalliesClient({
                   </td>
                 </tr>
               ) : (
-                recent.map((t) => (
-                  <tr key={t.id} className="border-t border-neutral-800">
-                    <td className="px-4 py-3 text-neutral-400">
-                      {new Date(t.createdAt).toLocaleString("de-DE")}
-                    </td>
-                    <td className="px-4 py-3 font-medium">{t.userName}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="rounded px-2 py-1 text-xs font-semibold"
-                        style={{ backgroundColor: t.categoryColor, color: "#0b0d12" }}
+                recent.map((t) => {
+                  const undone = Boolean(t.deletedAt);
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`border-t border-neutral-800 ${
+                        undone ? "bg-red-500/5" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3 text-neutral-400">
+                        {new Date(t.createdAt).toLocaleString("de-DE")}
+                      </td>
+                      <td
+                        className={`px-4 py-3 font-medium ${
+                          undone ? "text-neutral-500 line-through" : ""
+                        }`}
                       >
-                        {t.categoryLabel}
-                      </span>
-                      {t.note && (
-                        <span className="ml-2 text-xs text-neutral-300">
-                          „{t.note}"
+                        {t.userName}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded px-2 py-1 text-xs font-semibold ${
+                            undone ? "opacity-50 line-through" : ""
+                          }`}
+                          style={{
+                            backgroundColor: t.categoryColor,
+                            color: "#0b0d12",
+                          }}
+                        >
+                          {t.categoryLabel}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-400">{t.source}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => deleteTally(t.id)}
-                        className="rounded bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30"
-                      >
-                        löschen
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                        {t.note && (
+                          <span
+                            className={`ml-2 text-xs ${
+                              undone
+                                ? "text-neutral-500 line-through"
+                                : "text-neutral-300"
+                            }`}
+                          >
+                            „{t.note}"
+                          </span>
+                        )}
+                        {undone && (
+                          <span className="ml-2 text-xs text-red-300">
+                            rückgängig
+                            {t.deletedByName ? ` (${t.deletedByName})` : ""}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400">{t.source}</td>
+                      <td className="px-4 py-3 text-right">
+                        {!undone && (
+                          <button
+                            onClick={() => deleteTally(t.id)}
+                            className="rounded bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30"
+                          >
+                            löschen
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

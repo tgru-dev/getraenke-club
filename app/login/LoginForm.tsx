@@ -10,6 +10,7 @@ const LAST_USER_KEY = "drinks:lastUser";
 export function LoginForm({ names }: { names: string[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
+  const [lastUser, setLastUser] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,9 +19,16 @@ export function LoginForm({ names }: { names: string[] }) {
     if (typeof window === "undefined") return;
     const last = window.localStorage.getItem(LAST_USER_KEY);
     if (last && names.includes(last)) {
-      setSelected(last);
+      setLastUser(last);
     }
   }, [names]);
+
+  // "Zuletzt"-User zuerst anzeigen, danach alphabetisch.
+  const orderedNames = [...names].sort((a, b) => {
+    if (a === lastUser) return -1;
+    if (b === lastUser) return 1;
+    return a.localeCompare(b);
+  });
 
   async function submit(currentSelected: string, p: string) {
     setLoading(true);
@@ -84,21 +92,31 @@ export function LoginForm({ names }: { names: string[] }) {
           </p>
         ) : (
           <div className="grid grid-cols-4 gap-3">
-            {names.map((n) => {
+            {orderedNames.map((n) => {
               const isSelected = n === selected;
+              const isLast = n === lastUser && !selected;
               return (
                 <button
                   key={n}
                   type="button"
                   onClick={() => pickUser(n)}
-                  className={`flex flex-col items-center gap-1 rounded-2xl p-2 transition active:scale-95 ${
-                    isSelected ? "bg-white/10 ring-2 ring-white" : "bg-transparent"
+                  className={`relative flex flex-col items-center gap-1 rounded-2xl p-2 transition active:scale-95 ${
+                    isSelected
+                      ? "bg-white/10 ring-2 ring-white"
+                      : isLast
+                        ? "bg-white/5 ring-1 ring-white/30"
+                        : "bg-transparent"
                   }`}
                 >
-                  <UserAvatar name={n} size={56} highlighted={isSelected} />
+                  <UserAvatar name={n} size={56} highlighted={isSelected || isLast} />
                   <span className="line-clamp-1 w-full text-center text-[11px] font-medium text-neutral-200">
                     {n}
                   </span>
+                  {isLast && (
+                    <span className="absolute -top-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[9px] font-semibold text-neutral-900">
+                      zuletzt
+                    </span>
+                  )}
                 </button>
               );
             })}

@@ -89,8 +89,32 @@ export function KioskBoard({
     const next = pin + k;
     setPin(next);
     if (next.length === 4) {
-      // Sofort zur Kategorie-Auswahl, PIN bleibt im Speicher und wird mit gesendet.
-      setTimeout(() => setStep("category"), 80);
+      void verifyAndAdvance(next);
+    }
+  }
+
+  async function verifyAndAdvance(currentPin: string) {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/kiosk/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: selected.name, pin: currentPin }),
+      });
+      if (res.ok) {
+        setStep("category");
+        return;
+      }
+      // Falsche PIN -> auf der PIN-Stufe bleiben, nicht ins Menü.
+      setPin("");
+      setError(res.status === 429 ? "Zu schnell – kurz warten." : "PIN falsch.");
+    } catch {
+      setPin("");
+      setError("Verbindungsfehler.");
+    } finally {
+      setBusy(false);
     }
   }
 

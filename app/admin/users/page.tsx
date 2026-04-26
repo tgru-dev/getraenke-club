@@ -12,7 +12,7 @@ export default async function UsersPage() {
       role: true,
       active: true,
       createdAt: true,
-      _count: { select: { tallies: true } },
+      _count: { select: { tallies: { where: { deletedAt: null } } } },
     },
   });
 

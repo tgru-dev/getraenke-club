@@ -16,18 +16,18 @@ export default async function AdminOverview() {
       prisma.category.findMany({ orderBy: { sortOrder: "asc" } }),
       prisma.tally.groupBy({
         by: ["categoryId"],
-        where: { createdAt: { gte: startOfDay } },
+        where: { createdAt: { gte: startOfDay }, deletedAt: null },
         _count: { _all: true },
       }),
       prisma.tally.groupBy({
         by: ["categoryId"],
-        where: { createdAt: { gte: startOfMonth } },
+        where: { createdAt: { gte: startOfMonth }, deletedAt: null },
         _count: { _all: true },
       }),
       prisma.user.count({ where: { active: true } }),
-      prisma.tally.count(),
+      prisma.tally.count({ where: { deletedAt: null } }),
       prisma.tally.findMany({
-        where: { createdAt: { gte: trendStart } },
+        where: { createdAt: { gte: trendStart }, deletedAt: null },
         select: { categoryId: true, createdAt: true },
       }),
     ]);

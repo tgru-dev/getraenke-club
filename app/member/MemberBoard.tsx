@@ -234,24 +234,12 @@ export function MemberBoard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {isAdmin && (
-            <>
-              <Link
-                href="/admin"
-                className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
-              >
-                Admin
-              </Link>
-              <button
-                onClick={async () => {
-                  // Account erst abmelden, dann ins Kiosk
-                  await fetch("/api/auth/logout", { method: "POST" });
-                  router.replace("/kiosk");
-                }}
-                className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
-              >
-                Tresen
-              </button>
-            </>
+            <Link
+              href="/admin"
+              className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
+            >
+              Admin
+            </Link>
           )}
           <button
             onClick={() => setShowPinChange(true)}

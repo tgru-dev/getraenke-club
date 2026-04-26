@@ -13,6 +13,9 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   if (!tally) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  if (tally.deletedAt) {
+    return NextResponse.json({ error: "already_deleted" }, { status: 400 });
+  }
 
   const isOwner = tally.userId === session.userId;
   const isAdmin = session.role === "admin";
@@ -29,7 +32,11 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     }
   }
 
-  await prisma.tally.delete({ where: { id } });
+  // Soft-Delete: Eintrag bleibt sichtbar im Admin-Audit, zählt aber nicht mehr.
+  await prisma.tally.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedBy: session.userId },
+  });
 
   if (isAdmin && !isOwner) {
     await prisma.auditLog.create({

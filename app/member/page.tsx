@@ -16,7 +16,11 @@ export default async function MemberPage() {
     prisma.category.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.tally.groupBy({
       by: ["categoryId"],
-      where: { userId: session.userId, createdAt: { gte: startOfDay } },
+      where: {
+        userId: session.userId,
+        createdAt: { gte: startOfDay },
+        deletedAt: null,
+      },
       _count: { _all: true },
     }),
   ]);

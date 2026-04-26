@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { LoginForm } from "./LoginForm";
@@ -30,6 +31,15 @@ export default async function LoginPage() {
         <p className="mt-1 text-sm text-neutral-400">Mit PIN anmelden</p>
       </header>
       <LoginForm names={users.map((u) => u.name)} />
+
+      <div className="mt-2 flex justify-center">
+        <Link
+          href="/kiosk"
+          className="rounded-xl bg-neutral-900 px-4 py-3 text-sm text-neutral-200 ring-1 ring-neutral-800 active:scale-95"
+        >
+          Tresenmodus →
+        </Link>
+      </div>
     </main>
   );
 }

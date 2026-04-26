@@ -39,6 +39,7 @@ export default async function TalliesPage({
       by: ["userId", "categoryId"],
       where: {
         createdAt: { gte: from, lte: to },
+        deletedAt: null,
         ...(params.userId ? { userId: params.userId } : {}),
       },
       _count: { _all: true },
@@ -56,6 +57,19 @@ export default async function TalliesPage({
       },
     }),
   ]);
+
+  // Namen der Personen, die rückgängig gemacht haben, in einem Schwung holen
+  const undoerIds = Array.from(
+    new Set(recent.flatMap((t) => (t.deletedBy ? [t.deletedBy] : []))),
+  );
+  const undoerMap = Object.fromEntries(
+    (
+      await prisma.user.findMany({
+        where: { id: { in: undoerIds } },
+        select: { id: true, name: true },
+      })
+    ).map((u) => [u.id, u.name]),
+  );
 
   const matrix: Record<string, Record<string, number>> = {};
   for (const row of perUser) {
@@ -79,6 +93,8 @@ export default async function TalliesPage({
         source: t.source,
         note: t.note,
         createdAt: t.createdAt.toISOString(),
+        deletedAt: t.deletedAt?.toISOString() ?? null,
+        deletedByName: t.deletedBy ? undoerMap[t.deletedBy] ?? null : null,
       }))}
     />
   );
