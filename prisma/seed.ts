@@ -8,6 +8,7 @@ const CATEGORIES = [
   { key: "kat2", label: "Mische", color: "#a855f7", sortOrder: 2 },
   { key: "kat3", label: "Cola / Sprite / Fanta", color: "#0ea5e9", sortOrder: 3 },
   { key: "kat4", label: "Shot", color: "#ef4444", sortOrder: 4 },
+  { key: "kat5", label: "Sonstiges", color: "#10b981", sortOrder: 5 },
 ];
 
 async function main() {

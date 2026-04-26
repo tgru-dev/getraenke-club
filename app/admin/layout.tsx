@@ -17,8 +17,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <NavLink href="/admin">Übersicht</NavLink>
         <NavLink href="/admin/users">Mitglieder</NavLink>
         <NavLink href="/admin/tallies">Strichliste</NavLink>
-        <NavLink href="/admin/products">Produkte</NavLink>
-        <NavLink href="/kiosk">Tresenmodus →</NavLink>
+        <NavLink href="/m">Meine Striche →</NavLink>
         <AdminSidebarFooter name={session.name ?? ""} />
       </aside>
       <main className="flex-1 overflow-x-auto p-6">{children}</main>

@@ -74,8 +74,8 @@ export function LoginForm({ names }: { names: string[] }) {
   }
 
   return (
-    <div className="flex w-full flex-col gap-6">
-      <div>
+    <div className="flex w-full flex-col gap-5">
+      <section>
         <p className="mb-3 text-sm text-neutral-400">Mitglied wählen</p>
         {names.length === 0 ? (
           <p className="rounded-xl bg-neutral-900 p-4 text-sm text-neutral-400">
@@ -83,7 +83,7 @@ export function LoginForm({ names }: { names: string[] }) {
             Konten erstellen.
           </p>
         ) : (
-          <div className="grid max-h-[40vh] grid-cols-3 gap-3 overflow-y-auto pb-1 sm:grid-cols-4">
+          <div className="grid grid-cols-4 gap-3">
             {names.map((n) => {
               const isSelected = n === selected;
               return (
@@ -91,12 +91,12 @@ export function LoginForm({ names }: { names: string[] }) {
                   key={n}
                   type="button"
                   onClick={() => pickUser(n)}
-                  className={`flex flex-col items-center gap-2 rounded-2xl p-2 transition active:scale-95 ${
+                  className={`flex flex-col items-center gap-1 rounded-2xl p-2 transition active:scale-95 ${
                     isSelected ? "bg-white/10 ring-2 ring-white" : "bg-transparent"
                   }`}
                 >
-                  <UserAvatar name={n} size={64} highlighted={isSelected} />
-                  <span className="line-clamp-1 text-xs font-medium text-neutral-200">
+                  <UserAvatar name={n} size={56} highlighted={isSelected} />
+                  <span className="line-clamp-1 w-full text-center text-[11px] font-medium text-neutral-200">
                     {n}
                   </span>
                 </button>
@@ -104,29 +104,36 @@ export function LoginForm({ names }: { names: string[] }) {
             })}
           </div>
         )}
-      </div>
+      </section>
 
       {selected && (
-        <div className="flex flex-col items-center gap-3">
-          <span className="text-sm text-neutral-300">
-            PIN für <span className="font-semibold text-white">{selected}</span>
-          </span>
-          <div className="flex gap-3">
+        <section className="sticky bottom-0 -mx-5 mt-2 flex flex-col gap-4 border-t border-neutral-800 bg-[#0b0d12]/95 px-5 pb-2 pt-4 backdrop-blur">
+          <div className="flex items-center justify-center gap-3">
+            <UserAvatar name={selected} size={36} highlighted />
+            <span className="text-sm text-neutral-300">
+              PIN für <span className="font-semibold text-white">{selected}</span>
+            </span>
+          </div>
+          <div className="flex justify-center gap-3">
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
-                className={`h-4 w-4 rounded-full ${
+                className={`h-3.5 w-3.5 rounded-full ${
                   pin.length > i ? "bg-white" : "bg-neutral-700"
                 }`}
               />
             ))}
           </div>
-        </div>
+          <Numpad onKey={handleKey} disabled={loading} />
+          {error && (
+            <p className="text-center text-sm text-red-400" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
       )}
 
-      <Numpad onKey={handleKey} disabled={loading || !selected} />
-
-      {error && (
+      {!selected && error && (
         <p className="text-center text-sm text-red-400" role="alert">
           {error}
         </p>

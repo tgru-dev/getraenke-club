@@ -83,6 +83,25 @@ export function UsersClient({ users }: { users: User[] }) {
     startTransition(() => router.refresh());
   }
 
+  async function remove(id: string, name: string, tallyCount: number) {
+    const msg =
+      tallyCount > 0
+        ? `„${name}" wirklich löschen? Dabei werden auch ${tallyCount} Striche unwiderruflich gelöscht.`
+        : `„${name}" wirklich löschen?`;
+    if (!window.confirm(msg)) return;
+    const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      const map: Record<string, string> = {
+        cannot_delete_self: "Du kannst dich nicht selbst löschen.",
+        last_admin: "Du bist der letzte Vorstand – nicht löschbar.",
+      };
+      alert(map[data?.error] ?? "Löschen fehlgeschlagen.");
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold">Mitglieder</h1>
@@ -163,12 +182,20 @@ export function UsersClient({ users }: { users: User[] }) {
                 </td>
                 <td className="px-4 py-3 tabular-nums">{u.tallyCount}</td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => setPin(u.id)}
-                    className="rounded bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700"
-                  >
-                    PIN ändern
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setPin(u.id)}
+                      className="rounded bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700"
+                    >
+                      PIN ändern
+                    </button>
+                    <button
+                      onClick={() => remove(u.id, u.name, u.tallyCount)}
+                      className="rounded bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30"
+                    >
+                      Löschen
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

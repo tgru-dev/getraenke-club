@@ -206,14 +206,22 @@ export function MemberBoard({
           <p className="text-xs uppercase tracking-wide text-neutral-500">Eingeloggt als</p>
           <h1 className="text-xl font-semibold">{name}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {isAdmin && (
-            <Link
-              href="/admin"
-              className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
-            >
-              Admin
-            </Link>
+            <>
+              <Link
+                href="/admin"
+                className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
+              >
+                Admin
+              </Link>
+              <Link
+                href="/kiosk"
+                className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
+              >
+                Tresen
+              </Link>
+            </>
           )}
           <button
             onClick={() => setShowPinChange(true)}
@@ -282,14 +290,6 @@ export function MemberBoard({
           {error}
         </p>
       )}
-
-      <Link
-        href="/m/scan"
-        className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-neutral-800 p-4 text-base font-semibold text-neutral-100 active:scale-[0.98]"
-      >
-        <span className="text-xl">📷</span>
-        Barcode scannen
-      </Link>
 
       {last && (
         <div className="fixed inset-x-4 bottom-6 mx-auto flex max-w-md items-center justify-between rounded-2xl bg-neutral-900 p-4 shadow-xl ring-1 ring-neutral-800">

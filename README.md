@@ -23,22 +23,18 @@ Vollständiger Plan: [`plan.md`](./plan.md).
 - TailwindCSS
 - Prisma + SQLite
 - iron-session + bcryptjs (PIN-Login)
-- `@zxing/browser` (Barcode-Erkennung)
-- OpenGTIN-DB als Produkt-Lookup, lokal 30 Tage gecached
 - PWA: Web-Manifest + Service Worker + Offline-Buchungs-Queue im Browser
 
 ## Wichtige Pfade
 
-| Pfad               | Zweck                                                            |
-| ------------------ | ---------------------------------------------------------------- |
-| `/login`           | PIN-Login mit runden Mitglieder-Kacheln, letzter Login gemerkt   |
-| `/m`               | Mitglieder-UI (Mobile), 4 Kategorie-Kacheln, Self-PIN-Change     |
-| `/m/scan`          | Barcode-Scanner (nutzt Smartphone-Kamera)                        |
-| `/kiosk`           | Tresenmodus für Tablet, kein Scanner, Auto-Reset nach 15 s       |
-| `/admin`           | Übersicht inkl. 30-Tage-Trend                                    |
-| `/admin/users`     | Mitglieder anlegen, Rolle/Status ändern, PIN zurücksetzen        |
-| `/admin/tallies`   | Strichliste mit Filtern + CSV-Export                             |
-| `/admin/products`  | Barcode↔Produkt↔Kategorie pflegen                                |
+| Pfad               | Zweck                                                                  |
+| ------------------ | ---------------------------------------------------------------------- |
+| `/login`           | PIN-Login mit runden Mitglieder-Kacheln, letzter Login gemerkt         |
+| `/m`               | Mitglieder-UI (Mobile), 5 Kategorie-Kacheln, Self-PIN-Change           |
+| `/kiosk`           | Tresenmodus für Tablet, Auto-Reset nach 15 s (Aufruf von außerhalb des Admin-Bereichs) |
+| `/admin`           | Übersicht inkl. 30-Tage-Trend                                          |
+| `/admin/users`     | Mitglieder anlegen, Rolle/Status ändern, PIN zurücksetzen, **löschen** |
+| `/admin/tallies`   | Strichliste mit Filtern + CSV-Export                                   |
 
 ---
 
@@ -64,24 +60,25 @@ App läuft auf <http://localhost:3000>. Default-Admin: **Name `Admin`, PIN `0000
 
 ## Funktionsdetails
 
-### Barcode-Scanner
+### Kategorien
 
-- Erreichbar über `/m/scan` oder den 📷-Button auf der Mitglieder-Startseite.
-- Browser-Kamera-API verlangt **HTTPS** – wird durch den Cloudflare Tunnel
-  automatisch erfüllt. Lokal funktioniert die Kamera nur über `localhost` oder
-  HTTPS.
-- Flow:
-  1. Scan startet die Rückkamera, sucht EAN-8/12/13/14.
-  2. Bekannter Barcode → Kategorie wird angezeigt, ein Tap bucht den Strich.
-  3. OpenGTIN-Treffer (Produkt neu) → Namensvorschlag, Mitglied wählt
-     Kategorie, Mapping wird gespeichert.
-  4. Kein Treffer → Mitglied trägt Namen + Kategorie ein, Mapping wird
-     gespeichert.
-- Vorstand pflegt Mappings unter `/admin/products` nach.
-- **OpenGTIN-Schlüssel:** Setze `OPENGTIN_QUERYID` in `.env`. Der Schlüssel
-  ist über das Kontaktformular bei [opengtindb.org](https://opengtindb.org/)
-  kostenlos erhältlich. Ohne Schlüssel liefert die API `error=5` und der
-  Scanner fällt sofort auf manuelle Eingabe zurück (funktioniert ebenfalls).
+Aktuell konfiguriert (in `prisma/seed.ts`, jederzeit anpassbar):
+
+| Kat | Label                 | Farbe   |
+| --- | --------------------- | ------- |
+| 1   | Bier / Spezi / Radler | amber   |
+| 2   | Mische                | violet  |
+| 3   | Cola / Sprite / Fanta | sky     |
+| 4   | Shot                  | red     |
+| 5   | Sonstiges             | emerald |
+
+### Vorstand bucht selbst
+
+Vorstandsmitglieder loggen sich genauso wie alle anderen ein und kommen
+zunächst auf die Admin-Übersicht. Über **Meine Striche →** in der Sidebar
+gelangen sie auf die Mitglieder-Ansicht und können sich selbst Striche setzen.
+Auf der Mitglieder-Seite gibt es im Header zusätzliche Buttons **Admin** und
+**Tresen**, um zwischen den Modi zu wechseln.
 
 ### PWA / Add to Homescreen
 
@@ -99,10 +96,12 @@ App läuft auf <http://localhost:3000>. Default-Admin: **Name `Admin`, PIN `0000
 
 ### Tresenmodus
 
-1. Auf dem Tablet einmal mit einem Admin-Account anmelden.
-2. `/kiosk` öffnen (Link in der Admin-Sidebar).
-3. Tablet im Browser-Vollbild belassen. Die Admin-Session bleibt 30 Tage gültig
-   und wirkt als "Geräteberechtigung" des Tablets.
+1. Auf dem Tablet einmal mit einem Vorstandsaccount anmelden.
+2. Auf `/m` wechseln (Mitgliederbereich) und dort den Button **Tresen**
+   antippen. Der Kiosk-Modus liegt bewusst **außerhalb** der Admin-Sidebar,
+   damit am Tablet keine Verwaltungsfunktionen sichtbar sind.
+3. Tablet im Browser-Vollbild belassen. Die Vorstands-Session bleibt
+   30 Tage gültig und wirkt als "Geräteberechtigung" des Tablets.
 4. Bedienung: Mitglied antippen → eigene PIN eingeben → Kategorie wählen.
    Nach 15 s Inaktivität springt das Tablet automatisch zurück zur
    Mitgliederauswahl.
@@ -293,8 +292,12 @@ sudo systemctl restart drinks
       Mitglieder-UI mit 4 Kacheln + Undo, Self-PIN-Change, Adminpanel mit
       User-Verwaltung, Strichliste, CSV-Export, Audit-Log
 - [x] Phase 2 – Tresenmodus (Tablet-Kiosk ohne Scanner), 30-Tage-Trend im Admin
-- [x] Phase 3 – Barcode-Scanner mit OpenGTIN (Mitglieder-Smartphone),
-      Produkt-/Barcode-Verwaltung im Admin, BarcodeCache mit 30 Tagen TTL
+- [x] Phase 3 – Barcode-Scanner mit OpenGTIN _(später wieder entfernt –
+      Kamera-Workflow nicht erwünscht)_
 - [x] Phase 4 – PWA-Manifest + App-Icon (iOS/Android-Add-to-Homescreen),
       Service Worker für Offline-Shell + `/offline`-Fallback, Offline-Queue
       für Tally-Buchungen mit automatischem Retry und Status-Banner
+- [x] Phase 5 – Feinschliff: Mitglieder-Löschen mit Cascade, "Sonstiges"-
+      Kategorie, Login-Auswahl scrollbar (statt Overflow), Kiosk-Modus
+      außerhalb des Admin-Bereichs, Vorstands-Navigation zu eigener
+      Strichliste

@@ -64,7 +64,7 @@ export default async function AdminOverview() {
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">Heute pro Kategorie</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           {categories.map((c) => (
             <div
               key={c.id}

@@ -76,3 +76,58 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session.userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (session.role !== "admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const { id } = await ctx.params;
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: { _count: { select: { tallies: true } } },
+  });
+  if (!user) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+
+  // Selbstlöschung verhindern, sonst hängt sich der Admin selbst aus.
+  if (id === session.userId) {
+    return NextResponse.json({ error: "cannot_delete_self" }, { status: 400 });
+  }
+  // Letzten Admin schützen.
+  if (user.role === "admin") {
+    const otherAdmins = await prisma.user.count({
+      where: { role: "admin", active: true, id: { not: id } },
+    });
+    if (otherAdmins === 0) {
+      return NextResponse.json({ error: "last_admin" }, { status: 400 });
+    }
+  }
+
+  // Cascade: alle Striche dieses Mitglieds gehen mit weg.
+  await prisma.tally.deleteMany({ where: { userId: id } });
+  // AuditLog-Einträge des Actors müssen auch weg, sonst FK-Verletzung.
+  await prisma.auditLog.deleteMany({ where: { actorUserId: id } });
+  await prisma.user.delete({ where: { id } });
+
+  await prisma.auditLog.create({
+    data: {
+      actorUserId: session.userId,
+      action: "delete_user",
+      targetTable: "User",
+      targetId: id,
+      before: JSON.stringify({
+        name: user.name,
+        role: user.role,
+        tallies: user._count.tallies,
+      }),
+    },
+  });
+
+  return NextResponse.json({ ok: true });
+}
