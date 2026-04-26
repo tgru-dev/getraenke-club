@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  pinHash   String
+  role      String   @default("member") // "member" | "admin"
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tallies      Tally[]
+  auditEntries AuditLog[] @relation("Actor")
+}
+
+model Category {
+  id        String  @id @default(cuid())
+  key       String  @unique // "kat1".."kat4"
+  label     String
+  color     String  // hex
+  sortOrder Int     @default(0)
+
+  tallies  Tally[]
+  products Product[]
+}
+
+model Product {
+  id         String   @id @default(cuid())
+  ean        String   @unique
+  name       String
+  categoryId String
+  source     String   @default("manual") // "opengtin" | "manual"
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id])
+  tallies  Tally[]
+}
+
+model Tally {
+  id         String   @id @default(cuid())
+  userId     String
+  categoryId String
+  productId  String?
+  source     String   @default("tap") // "tap" | "scan" | "admin" | "kiosk"
+  amount     Int      @default(1)
+  note       String?
+  createdAt  DateTime @default(now())
+  createdBy  String? // userId des Admins, falls nachträglich gebucht
+
+  user     User      @relation(fields: [userId], references: [id])
+  category Category  @relation(fields: [categoryId], references: [id])
+  product  Product?  @relation(fields: [productId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([categoryId, createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String
+  action       String
+  targetTable  String
+  targetId     String
+  before       String?
+  after        String?
+  createdAt    DateTime @default(now())
+
+  actor User @relation("Actor", fields: [actorUserId], references: [id])
+}
+
+model BarcodeCache {
+  ean       String   @id
+  payload   String
+  fetchedAt DateTime @default(now())
+}
