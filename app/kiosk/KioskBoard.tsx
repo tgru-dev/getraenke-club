@@ -270,16 +270,23 @@ export function KioskBoard({
         <div className="flex flex-col items-center gap-6">
           <UserAvatar name={selected.name} size={72} highlighted />
           <p className="text-xl font-semibold">{selected.name} – was wird's?</p>
-          <div className="grid w-full max-w-2xl grid-cols-2 gap-4">
+          <div
+            className="grid w-full gap-3 sm:gap-4"
+            style={{
+              gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))`,
+            }}
+          >
             {categories.map((c) => (
               <button
                 key={c.id}
                 onClick={() => pickCategory(c)}
                 disabled={busy}
-                className="flex aspect-square flex-col items-center justify-between rounded-3xl p-5 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60"
+                className="flex aspect-square flex-col items-center justify-between rounded-3xl p-4 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60 sm:p-5"
                 style={{ backgroundColor: c.color, color: "#0b0d12" }}
               >
-                <span className="text-lg font-bold leading-tight">{c.label}</span>
+                <span className="text-base font-bold leading-tight sm:text-lg">
+                  {c.label}
+                </span>
                 <span className="self-end text-xs font-semibold uppercase opacity-70">
                   {c.freetext ? "Text…" : "+1"}
                 </span>
