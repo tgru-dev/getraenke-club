@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Getränke-Club Strichliste",
     short_name: "Getränke-Club",
     description: "Digitale Strichliste für den Jugendclub",
-    start_url: "/m",
+    start_url: "/member",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

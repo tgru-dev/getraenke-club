@@ -11,7 +11,7 @@ const NAV = [
   { href: "/admin/tallies", label: "Strichliste" },
   { href: "/admin/categories", label: "Kategorien" },
   { href: "/admin/branding", label: "Logo" },
-  { href: "/m", label: "Meine Striche →" },
+  { href: "/member", label: "Meine Striche →" },
 ] as const;
 
 export function AdminShell({

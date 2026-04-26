@@ -6,5 +6,5 @@ export default async function Index() {
   if (!session.userId) redirect("/login");
   // Vorstand & Mitglied landen beide auf der Strichliste-Seite.
   // Vorstand erreicht das Admin-Panel über den "Admin"-Button im Header.
-  redirect("/m");
+  redirect("/member");
 }

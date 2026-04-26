@@ -30,7 +30,7 @@ Vollständiger Plan: [`plan.md`](./plan.md).
 | Pfad               | Zweck                                                                  |
 | ------------------ | ---------------------------------------------------------------------- |
 | `/login`           | PIN-Login mit runden Mitglieder-Kacheln, letzter Login gemerkt         |
-| `/m`               | Mitglieder-UI (Mobile), 5 Kategorie-Kacheln, Self-PIN-Change           |
+| `/member`          | Mitglieder-UI (Mobile), 5 Kategorie-Kacheln, Self-PIN-Change           |
 | `/kiosk`           | Tresenmodus für Tablet, Auto-Reset nach 15 s (Aufruf von außerhalb des Admin-Bereichs) |
 | `/admin`           | Übersicht inkl. 30-Tage-Trend                                          |
 | `/admin/users`     | Mitglieder anlegen, Rolle/Status ändern, PIN zurücksetzen, **löschen** |
@@ -97,7 +97,7 @@ Auf der Mitglieder-Seite gibt es im Header zusätzliche Buttons **Admin** und
 ### Tresenmodus
 
 1. Auf dem Tablet einmal mit einem Vorstandsaccount anmelden.
-2. Auf `/m` wechseln (Mitgliederbereich) und dort den Button **Tresen**
+2. Auf `/member` wechseln (Mitgliederbereich) und dort den Button **Tresen**
    antippen. Der Kiosk-Modus liegt bewusst **außerhalb** der Admin-Sidebar,
    damit am Tablet keine Verwaltungsfunktionen sichtbar sind.
 3. Tablet im Browser-Vollbild belassen. Die Vorstands-Session bleibt

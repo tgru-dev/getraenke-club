@@ -42,7 +42,7 @@ export function LoginForm({ names }: { names: string[] }) {
       } catch {
         // ignore (Privacy-Mode etc.)
       }
-      router.replace("/m");
+      router.replace("/member");
     } catch {
       setError("Verbindung fehlgeschlagen.");
     } finally {
