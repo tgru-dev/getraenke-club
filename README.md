@@ -37,10 +37,27 @@ PIN nach erstem Login im Admin-Panel ändern.
 
 - `/login` – PIN-Login mit runden Mitglieder-Kacheln und Last-User-Memory
 - `/m` – Mitglieder-UI (Mobile), inkl. Self-PIN-Change
-- `/kiosk` – Tresenmodus für Tablet (nur erreichbar mit Admin-Session)
+- `/m/scan` – Barcode-Scanner (Smartphone-Kamera)
+- `/kiosk` – Tresenmodus für Tablet (nur erreichbar mit Admin-Session, kein Scanner)
 - `/admin` – Admin-Übersicht mit 30-Tage-Trend
 - `/admin/users` – Mitgliederverwaltung
 - `/admin/tallies` – Strichlisten + CSV-Export
+- `/admin/products` – Barcode/Produkt-Mappings
+
+## Barcode-Scanner
+
+- Erreichbar über `/m/scan` oder den 📷-Button auf der Mitglieder-Startseite.
+- Browser-Kamera-API verlangt **HTTPS** – wird durch Cloudflare Tunnel automatisch erfüllt.
+- Flow:
+  1. Scan startet die Rückkamera, sucht EAN-8/12/13/14.
+  2. Bekannter Barcode → Kategorie wird angezeigt, Strich wird mit einem Tap gebucht.
+  3. OpenGTIN-Treffer (Produkt neu) → Vorschlag für Namen, Mitglied wählt Kategorie, Mapping wird gespeichert.
+  4. Kein Treffer → Mitglied trägt Namen + Kategorie ein, Mapping wird gespeichert.
+- Vorstand pflegt Barcodes/Kategorien unter `/admin/products` nach.
+- **OpenGTIN-Schlüssel:** Setze `OPENGTIN_QUERYID` in `.env`. Der Schlüssel ist
+  über das Kontaktformular bei [opengtindb.org](https://opengtindb.org/) kostenlos
+  erhältlich. Ohne Schlüssel liefert die API `error=5` und der Scanner fällt
+  sofort auf manuelle Eingabe zurück (funktioniert ebenfalls).
 
 ## Tresenmodus
 
@@ -186,5 +203,6 @@ sudo systemctl restart drinks
       Mitglieder-UI mit 4 Kacheln + Undo, Self-PIN-Change, Adminpanel mit
       User-Verwaltung, Strichliste, CSV-Export, Audit-Log
 - [x] Phase 2 – Tresenmodus (Tablet-Kiosk ohne Scanner), 30-Tage-Trend im Admin
-- [ ] Phase 3 – Barcode-Scanner mit OpenGTIN (Mitglieder-Smartphone)
+- [x] Phase 3 – Barcode-Scanner mit OpenGTIN (Mitglieder-Smartphone),
+      Produkt-/Barcode-Verwaltung im Admin, BarcodeCache mit 30 Tagen TTL
 - [ ] Phase 4 – Polish, PWA, Offline-Sync

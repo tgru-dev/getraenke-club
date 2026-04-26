@@ -169,6 +169,14 @@ export function MemberBoard({
         </p>
       )}
 
+      <Link
+        href="/m/scan"
+        className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-neutral-800 p-4 text-base font-semibold text-neutral-100 active:scale-[0.98]"
+      >
+        <span className="text-xl">📷</span>
+        Barcode scannen
+      </Link>
+
       {last && (
         <div className="fixed inset-x-4 bottom-6 mx-auto flex max-w-md items-center justify-between rounded-2xl bg-neutral-900 p-4 shadow-xl ring-1 ring-neutral-800">
           <span className="text-sm">Strich gebucht.</span>

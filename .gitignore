@@ -11,3 +11,6 @@ prisma/dev.db
 prisma/dev.db-journal
 data/
 backups/
+
+# Tooling state
+.claude/
