@@ -178,7 +178,7 @@ export function KioskBoard({
   return (
     <main
       onPointerDown={armIdle}
-      className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col p-6"
+      className="mx-auto flex min-h-dvh w-full flex-col p-4 sm:p-6"
     >
       <header className="mb-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -271,7 +271,7 @@ export function KioskBoard({
           <UserAvatar name={selected.name} size={72} highlighted />
           <p className="text-xl font-semibold">{selected.name} – was wird's?</p>
           <div
-            className="grid w-full gap-3 sm:gap-4"
+            className="grid w-full gap-4 sm:gap-6"
             style={{
               gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))`,
             }}
@@ -281,13 +281,13 @@ export function KioskBoard({
                 key={c.id}
                 onClick={() => pickCategory(c)}
                 disabled={busy}
-                className="flex aspect-square flex-col items-center justify-between rounded-3xl p-4 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60 sm:p-5"
+                className="flex aspect-square flex-col items-center justify-between rounded-3xl p-6 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60 sm:p-8"
                 style={{ backgroundColor: c.color, color: "#0b0d12" }}
               >
-                <span className="text-base font-bold leading-tight sm:text-lg">
+                <span className="text-2xl font-bold leading-tight sm:text-3xl">
                   {c.label}
                 </span>
-                <span className="self-end text-xs font-semibold uppercase opacity-70">
+                <span className="self-end text-sm font-semibold uppercase opacity-70 sm:text-base">
                   {c.freetext ? "Text…" : "+1"}
                 </span>
               </button>
