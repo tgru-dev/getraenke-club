@@ -19,6 +19,7 @@ type Category = {
   key: string;
   label: string;
   color: string;
+  freetext: boolean;
 };
 
 type LastAction = { tallyId: string; categoryId: string; expiresAt: number } | null;
@@ -113,7 +114,7 @@ export function MemberBoard({
 
   function tap(category: Category) {
     if (busy) return;
-    if (category.key === "kat5") {
+    if (category.freetext) {
       setSonstigesFor(category);
       return;
     }
@@ -216,10 +217,20 @@ export function MemberBoard({
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col p-4">
-      <header className="mb-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">Eingeloggt als</p>
-          <h1 className="text-xl font-semibold">{name}</h1>
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/api/branding/logo"
+            alt=""
+            className="h-10 w-10 rounded-xl object-contain"
+          />
+          <div>
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Eingeloggt als
+            </p>
+            <h1 className="text-xl font-semibold leading-tight">{name}</h1>
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {isAdmin && (
@@ -294,7 +305,7 @@ export function MemberBoard({
             <span className="text-base font-bold leading-tight">{c.label}</span>
             <div className="flex w-full items-end justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide opacity-70">
-                {c.key === "kat5" ? "text…" : "heute"}
+                {c.freetext ? "text…" : "heute"}
               </span>
               <span className="text-5xl font-black leading-none">
                 {counts[c.id] ?? 0}

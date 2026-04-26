@@ -9,6 +9,8 @@ const NAV = [
   { href: "/admin", label: "Übersicht" },
   { href: "/admin/users", label: "Mitglieder" },
   { href: "/admin/tallies", label: "Strichliste" },
+  { href: "/admin/categories", label: "Kategorien" },
+  { href: "/admin/branding", label: "Logo" },
   { href: "/m", label: "Meine Striche →" },
 ] as const;
 
@@ -40,7 +42,7 @@ export function AdminShell({
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-4 py-3 md:hidden">
         <Link href="/admin" className="flex items-center gap-2 font-bold">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon-192.png" alt="" className="h-8 w-8 rounded-lg" />
+          <img src="/api/branding/logo" alt="" className="h-8 w-8 rounded-lg object-contain" />
           <span className="text-base">Strichliste · Admin</span>
         </Link>
         <button
@@ -56,7 +58,7 @@ export function AdminShell({
       <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-neutral-800 bg-neutral-950 p-4 md:flex">
         <Link href="/admin" className="mb-4 flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon-192.png" alt="" className="h-9 w-9 rounded-lg" />
+          <img src="/api/branding/logo" alt="" className="h-9 w-9 rounded-lg object-contain" />
           <span className="text-base font-bold leading-tight">
             Strichliste
             <span className="block text-xs font-normal text-neutral-400">

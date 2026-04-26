@@ -33,6 +33,7 @@ export default async function MemberPage() {
         key: c.key,
         label: c.label,
         color: c.color,
+        freetext: c.freetext,
       }))}
       initialCounts={counts}
     />

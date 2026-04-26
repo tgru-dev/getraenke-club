@@ -19,7 +19,13 @@ export default async function LoginPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pb-10 pt-8">
-      <header className="text-center">
+      <header className="flex flex-col items-center text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/api/branding/logo"
+          alt=""
+          className="mb-3 h-20 w-20 rounded-2xl object-contain"
+        />
         <h1 className="text-3xl font-bold">Strichliste</h1>
         <p className="mt-1 text-sm text-neutral-400">Mit PIN anmelden</p>
       </header>

@@ -22,13 +22,21 @@ model User {
 
 model Category {
   id        String  @id @default(cuid())
-  key       String  @unique // "kat1".."kat4"
+  key       String  @unique // "kat1".."kat5", "custom-..."
   label     String
   color     String  // hex
   sortOrder Int     @default(0)
+  freetext  Boolean @default(false) // wenn true: Tap öffnet Texteingabe statt direkt zu buchen
 
   tallies  Tally[]
   products Product[]
+}
+
+model Branding {
+  id        String   @id @default("default")
+  logoBytes Bytes?
+  logoMime  String?
+  updatedAt DateTime @updatedAt
 }
 
 model Product {

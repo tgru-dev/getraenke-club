@@ -7,7 +7,13 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { SonstigesDialog } from "@/components/SonstigesDialog";
 
 type User = { id: string; name: string };
-type Category = { id: string; key: string; label: string; color: string };
+type Category = {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  freetext: boolean;
+};
 type Step = "pick" | "pin" | "category" | "confirm";
 
 const IDLE_TIMEOUT_MS = 15_000;
@@ -91,7 +97,7 @@ export function KioskBoard({
   function pickCategory(category: Category) {
     armIdle();
     if (busy) return;
-    if (category.key === "kat5") {
+    if (category.freetext) {
       setSonstigesFor(category);
       return;
     }
@@ -150,10 +156,20 @@ export function KioskBoard({
       onPointerDown={armIdle}
       className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col p-6"
     >
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">Tresenmodus</p>
-          <h1 className="text-2xl font-bold">Strichliste</h1>
+      <header className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/api/branding/logo"
+            alt=""
+            className="h-12 w-12 rounded-xl object-contain"
+          />
+          <div>
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Tresenmodus
+            </p>
+            <h1 className="text-2xl font-bold leading-tight">Strichliste</h1>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {step !== "pick" && (
@@ -241,7 +257,7 @@ export function KioskBoard({
               >
                 <span className="text-lg font-bold leading-tight">{c.label}</span>
                 <span className="self-end text-xs font-semibold uppercase opacity-70">
-                  {c.key === "kat5" ? "Text…" : "+1"}
+                  {c.freetext ? "Text…" : "+1"}
                 </span>
               </button>
             ))}

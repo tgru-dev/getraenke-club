@@ -23,6 +23,7 @@ export default async function KioskPage() {
         key: c.key,
         label: c.label,
         color: c.color,
+        freetext: c.freetext,
       }))}
     />
   );
