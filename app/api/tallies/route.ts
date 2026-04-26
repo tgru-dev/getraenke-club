@@ -7,6 +7,7 @@ const Body = z.object({
   categoryId: z.string().min(1),
   source: z.enum(["tap", "scan", "kiosk"]).default("tap"),
   productId: z.string().min(1).optional(),
+  note: z.string().trim().max(120).optional(),
 });
 
 const lastTallyAt = new Map<string, number>();
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
       categoryId: category.id,
       productId: parsed.data.productId,
       source: parsed.data.source,
+      note: parsed.data.note?.trim() || null,
     },
   });
 

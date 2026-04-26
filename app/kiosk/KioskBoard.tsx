@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Numpad } from "@/components/Numpad";
 import { UserAvatar } from "@/components/UserAvatar";
+import { SonstigesDialog } from "@/components/SonstigesDialog";
 
 type User = { id: string; name: string };
 type Category = { id: string; key: string; label: string; color: string };
@@ -29,6 +30,7 @@ export function KioskBoard({
     category: string;
     color: string;
   } | null>(null);
+  const [sonstigesFor, setSonstigesFor] = useState<Category | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,6 +39,7 @@ export function KioskBoard({
     setSelected(null);
     setPin("");
     setError(null);
+    setSonstigesFor(null);
   }, []);
 
   const armIdle = useCallback(() => {
@@ -85,7 +88,17 @@ export function KioskBoard({
     }
   }
 
-  async function bookCategory(category: Category) {
+  function pickCategory(category: Category) {
+    armIdle();
+    if (busy) return;
+    if (category.key === "kat5") {
+      setSonstigesFor(category);
+      return;
+    }
+    void bookCategory(category, undefined);
+  }
+
+  async function bookCategory(category: Category, note?: string) {
     if (!selected) return;
     armIdle();
     setBusy(true);
@@ -97,23 +110,25 @@ export function KioskBoard({
       const res = await fetch("/api/kiosk/tally", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: selected.name, pin, categoryId: category.id }),
+        body: JSON.stringify({
+          name: selected.name,
+          pin,
+          categoryId: category.id,
+          ...(note ? { note } : {}),
+        }),
       });
       if (res.status === 401) {
         if (idleTimer.current) clearTimeout(idleTimer.current);
         setError("PIN falsch.");
         setStep("pin");
         setPin("");
-        return;
-      }
-      if (res.status === 403) {
-        // Admin-Session abgelaufen → Setup neu starten.
-        router.replace("/login?next=/kiosk");
+        setSonstigesFor(null);
         return;
       }
       if (!res.ok) {
         setError("Buchung fehlgeschlagen.");
         setStep("pick");
+        setSonstigesFor(null);
         return;
       }
       setLastBooking({
@@ -121,6 +136,7 @@ export function KioskBoard({
         category: category.label,
         color: category.color,
       });
+      setSonstigesFor(null);
       setStep("confirm");
       if (confirmTimer.current) clearTimeout(confirmTimer.current);
       confirmTimer.current = setTimeout(reset, 1500);
@@ -146,6 +162,14 @@ export function KioskBoard({
               className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
             >
               Zurück
+            </button>
+          )}
+          {step === "pick" && (
+            <button
+              onClick={() => router.replace("/login")}
+              className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
+            >
+              Beenden
             </button>
           )}
         </div>
@@ -210,19 +234,31 @@ export function KioskBoard({
             {categories.map((c) => (
               <button
                 key={c.id}
-                onClick={() => bookCategory(c)}
+                onClick={() => pickCategory(c)}
                 disabled={busy}
                 className="flex aspect-square flex-col items-center justify-between rounded-3xl p-5 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60"
                 style={{ backgroundColor: c.color, color: "#0b0d12" }}
               >
                 <span className="text-lg font-bold leading-tight">{c.label}</span>
                 <span className="self-end text-xs font-semibold uppercase opacity-70">
-                  +1
+                  {c.key === "kat5" ? "Text…" : "+1"}
                 </span>
               </button>
             ))}
           </div>
         </div>
+      )}
+
+      {sonstigesFor && selected && (
+        <SonstigesDialog
+          color={sonstigesFor.color}
+          busy={busy}
+          onCancel={() => setSonstigesFor(null)}
+          onConfirm={(note) => {
+            const cat = sonstigesFor;
+            void bookCategory(cat, note);
+          }}
+        />
       )}
 
       {step === "confirm" && lastBooking && (

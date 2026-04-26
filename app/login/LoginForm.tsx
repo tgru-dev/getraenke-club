@@ -36,13 +36,13 @@ export function LoginForm({ names }: { names: string[] }) {
         setPin("");
         return;
       }
-      const data = await res.json();
+      await res.json();
       try {
         window.localStorage.setItem(LAST_USER_KEY, currentSelected);
       } catch {
         // ignore (Privacy-Mode etc.)
       }
-      router.replace(data.role === "admin" ? "/admin" : "/m");
+      router.replace("/m");
     } catch {
       setError("Verbindung fehlgeschlagen.");
     } finally {

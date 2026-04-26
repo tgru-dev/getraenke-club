@@ -11,6 +11,7 @@ type RecentRow = {
   categoryLabel: string;
   categoryColor: string;
   source: string;
+  note: string | null;
   createdAt: string;
 };
 
@@ -197,6 +198,11 @@ export function TalliesClient({
                       >
                         {t.categoryLabel}
                       </span>
+                      {t.note && (
+                        <span className="ml-2 text-xs text-neutral-300">
+                          „{t.note}"
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-neutral-400">{t.source}</td>
                     <td className="px-4 py-3 text-right">

@@ -10,6 +10,7 @@ export type QueuedTally = {
   categoryId: string;
   source: "tap" | "scan";
   productId?: string;
+  note?: string;
   createdAt: string; // ISO
 };
 
@@ -72,6 +73,7 @@ export async function flushQueue(userName: string): Promise<{
           categoryId: item.categoryId,
           source: item.source,
           productId: item.productId,
+          ...(item.note ? { note: item.note } : {}),
         }),
       });
       if (res.status === 401) {

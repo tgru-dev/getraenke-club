@@ -2,28 +2,20 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { getSession } from "@/lib/session";
 
 const Body = z.object({
   name: z.string().trim().min(1).max(64),
   pin: z.string().regex(/^\d{4}$/),
   categoryId: z.string().min(1),
+  note: z.string().trim().max(120).optional(),
 });
 
 const lastTallyAt = new Map<string, number>();
 const RATE_LIMIT_MS = 400;
 
 export async function POST(req: Request) {
-  // Tresenmodus erfordert eine Admin-Session auf dem Tablet
-  // (einmal eingerichtet, dann dauerhaft aktiv).
-  const session = await getSession();
-  if (!session.userId) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  if (session.role !== "admin") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
+  // Kiosk-Endpoint ist bewusst öffentlich (kein Account am Tablet).
+  // Schutz: 4-stellige PIN + Rate-Limit pro Mitglied.
   const json = await req.json().catch(() => null);
   const parsed = Body.safeParse(json);
   if (!parsed.success) {
@@ -59,6 +51,7 @@ export async function POST(req: Request) {
       userId: user.id,
       categoryId: category.id,
       source: "kiosk",
+      note: parsed.data.note?.trim() || null,
     },
   });
 

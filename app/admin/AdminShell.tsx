@@ -38,8 +38,10 @@ export function AdminShell({
     <div className="flex min-h-dvh flex-col md:flex-row">
       {/* Mobile Topbar */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-4 py-3 md:hidden">
-        <Link href="/admin" className="text-base font-bold">
-          Strichliste · Admin
+        <Link href="/admin" className="flex items-center gap-2 font-bold">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" className="h-8 w-8 rounded-lg" />
+          <span className="text-base">Strichliste · Admin</span>
         </Link>
         <button
           onClick={() => setDrawerOpen(true)}
@@ -52,7 +54,16 @@ export function AdminShell({
 
       {/* Desktop-Sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-neutral-800 bg-neutral-950 p-4 md:flex">
-        <h1 className="mb-4 text-lg font-bold">Strichliste · Admin</h1>
+        <Link href="/admin" className="mb-4 flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" className="h-9 w-9 rounded-lg" />
+          <span className="text-base font-bold leading-tight">
+            Strichliste
+            <span className="block text-xs font-normal text-neutral-400">
+              Admin
+            </span>
+          </span>
+        </Link>
         <Nav pathname={pathname} />
         <div className="mt-auto flex flex-col gap-2 pt-4">
           <p className="text-xs text-neutral-500">{name}</p>

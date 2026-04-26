@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PinChangeDialog } from "@/components/PinChangeDialog";
+import { SonstigesDialog } from "@/components/SonstigesDialog";
 import {
   enqueue,
   flushQueue,
@@ -39,6 +40,7 @@ export function MemberBoard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPinChange, setShowPinChange] = useState(false);
+  const [sonstigesFor, setSonstigesFor] = useState<Category | null>(null);
   const [online, setOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,8 +111,16 @@ export function MemberBoard({
     }));
   }
 
-  async function tap(category: Category) {
+  function tap(category: Category) {
     if (busy) return;
+    if (category.key === "kat5") {
+      setSonstigesFor(category);
+      return;
+    }
+    void book(category, undefined);
+  }
+
+  async function book(category: Category, note?: string) {
     setBusy(true);
     setError(null);
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -124,6 +134,7 @@ export function MemberBoard({
       userName: name,
       categoryId: category.id,
       source: "tap",
+      note,
       createdAt: new Date().toISOString(),
     };
 
@@ -131,7 +142,11 @@ export function MemberBoard({
       const res = await fetch("/api/tallies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categoryId: category.id, source: "tap" }),
+        body: JSON.stringify({
+          categoryId: category.id,
+          source: "tap",
+          ...(note ? { note } : {}),
+        }),
       });
 
       if (res.status === 401) {
@@ -215,12 +230,16 @@ export function MemberBoard({
               >
                 Admin
               </Link>
-              <Link
-                href="/kiosk"
+              <button
+                onClick={async () => {
+                  // Account erst abmelden, dann ins Kiosk
+                  await fetch("/api/auth/logout", { method: "POST" });
+                  router.replace("/kiosk");
+                }}
                 className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200"
               >
                 Tresen
-              </Link>
+              </button>
             </>
           )}
           <button
@@ -275,7 +294,7 @@ export function MemberBoard({
             <span className="text-base font-bold leading-tight">{c.label}</span>
             <div className="flex w-full items-end justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide opacity-70">
-                heute
+                {c.key === "kat5" ? "text…" : "heute"}
               </span>
               <span className="text-5xl font-black leading-none">
                 {counts[c.id] ?? 0}
@@ -304,6 +323,19 @@ export function MemberBoard({
       )}
 
       {showPinChange && <PinChangeDialog onClose={() => setShowPinChange(false)} />}
+
+      {sonstigesFor && (
+        <SonstigesDialog
+          color={sonstigesFor.color}
+          busy={busy}
+          onCancel={() => setSonstigesFor(null)}
+          onConfirm={(note) => {
+            const cat = sonstigesFor;
+            setSonstigesFor(null);
+            void book(cat, note);
+          }}
+        />
+      )}
     </main>
   );
 }

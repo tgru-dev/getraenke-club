@@ -1,15 +1,11 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { KioskBoard } from "./KioskBoard";
 
 export const dynamic = "force-dynamic";
 
 export default async function KioskPage() {
-  const session = await getSession();
-  if (!session.userId) redirect("/login");
-  if (session.role !== "admin") redirect("/m");
-
+  // Tresenmodus läuft bewusst ohne Account am Gerät.
+  // Schutz pro Buchung: PIN des Mitglieds + Rate-Limit serverseitig.
   const [users, categories] = await Promise.all([
     prisma.user.findMany({
       where: { active: true },

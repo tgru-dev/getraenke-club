@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     },
   });
 
-  const lines = ["zeit;mitglied;kategorie_key;kategorie;quelle"];
+  const lines = ["zeit;mitglied;kategorie_key;kategorie;quelle;notiz"];
   for (const t of tallies) {
     lines.push(
       [
@@ -48,6 +48,7 @@ export async function GET(req: Request) {
         t.category.key,
         csvEscape(t.category.label),
         t.source,
+        csvEscape(t.note ?? ""),
       ].join(";"),
     );
   }

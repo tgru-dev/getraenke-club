@@ -77,6 +77,7 @@ export default async function TalliesPage({
         categoryLabel: t.category.label,
         categoryColor: t.category.color,
         source: t.source,
+        note: t.note,
         createdAt: t.createdAt.toISOString(),
       }))}
     />

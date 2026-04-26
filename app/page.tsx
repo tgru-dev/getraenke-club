@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 export default async function Index() {
   const session = await getSession();
   if (!session.userId) redirect("/login");
-  if (session.role === "admin") redirect("/admin");
+  // Vorstand & Mitglied landen beide auf der Strichliste-Seite.
+  // Vorstand erreicht das Admin-Panel über den "Admin"-Button im Header.
   redirect("/m");
 }
