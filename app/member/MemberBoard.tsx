@@ -10,7 +10,6 @@ import {
   flushQueue,
   getQueueFor,
   newId,
-  removeById,
   type QueuedTally,
 } from "@/lib/offlineQueue";
 
@@ -202,13 +201,6 @@ export function MemberBoard({
     router.replace("/login");
   }
 
-  function dropPending() {
-    if (!window.confirm(`${pendingCount} ausstehende Buchung(en) verwerfen?`)) return;
-    for (const item of getQueueFor(name)) removeById(item.id);
-    refreshPending();
-    router.refresh();
-  }
-
   useEffect(() => {
     return () => {
       if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -258,22 +250,15 @@ export function MemberBoard({
 
       {(!online || pendingCount > 0) && (
         <div
-          className={`mb-3 flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs ${
+          className={`mb-3 rounded-xl px-3 py-2 text-xs ${
             online
               ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
               : "bg-red-500/10 text-red-300 ring-1 ring-red-500/30"
           }`}
         >
-          <span>
-            {online
-              ? `${pendingCount} Buchung(en) werden nachgereicht …`
-              : `Offline · ${pendingCount} ausstehend`}
-          </span>
-          {pendingCount > 0 && (
-            <button onClick={dropPending} className="underline">
-              verwerfen
-            </button>
-          )}
+          {online
+            ? `${pendingCount} Buchung(en) werden nachgereicht …`
+            : `Offline · ${pendingCount} ausstehend`}
         </div>
       )}
 
