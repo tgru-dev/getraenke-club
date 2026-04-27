@@ -3,17 +3,14 @@ import { StackedBarChart } from "@/components/StackedBarChart";
 import { DonutChart } from "@/components/DonutChart";
 import { HorizontalBarList } from "@/components/HorizontalBarList";
 import { HourBars } from "@/components/HourBars";
-import { RangePicker, rangeFromKey, type RangeKey } from "@/components/RangePicker";
+import { RangePicker } from "@/components/RangePicker";
+import { rangeFromKey, isRangeKey, type RangeKey } from "@/lib/range";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = { range?: string };
-
-function isRangeKey(v: string | undefined): v is RangeKey {
-  return v === "today" || v === "week" || v === "month" || v === "year" || v === "all";
-}
 
 export default async function AdminOverview({
   searchParams,

@@ -8,6 +8,7 @@ const Body = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   freetext: z.boolean().default(false),
   sortOrder: z.number().int().optional(),
+  priceCents: z.number().int().min(0).max(100000).default(0),
 });
 
 async function ensureAdmin() {
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
       color: parsed.data.color,
       freetext: parsed.data.freetext,
       sortOrder,
+      priceCents: parsed.data.priceCents,
     },
   });
 

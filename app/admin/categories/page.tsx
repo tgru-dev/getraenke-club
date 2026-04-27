@@ -18,6 +18,7 @@ export default async function CategoriesPage() {
         color: c.color,
         sortOrder: c.sortOrder,
         freetext: c.freetext,
+        priceCents: c.priceCents,
         tallyCount: c._count.tallies,
       }))}
     />

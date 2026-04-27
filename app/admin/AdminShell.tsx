@@ -9,6 +9,7 @@ const NAV = [
   { href: "/admin", label: "Übersicht" },
   { href: "/admin/users", label: "Mitglieder" },
   { href: "/admin/tallies", label: "Strichliste" },
+  { href: "/admin/billing", label: "Abrechnung" },
   { href: "/admin/categories", label: "Kategorien" },
   { href: "/admin/branding", label: "Logo" },
   { href: "/member", label: "Meine Striche →" },

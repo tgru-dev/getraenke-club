@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { centsToEurInput, eurToCents } from "@/lib/money";
 
 type Cat = {
   id: string;
@@ -10,6 +11,7 @@ type Cat = {
   color: string;
   sortOrder: number;
   freetext: boolean;
+  priceCents: number;
   tallyCount: number;
 };
 
@@ -32,11 +34,17 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
   const [newLabel, setNewLabel] = useState("");
   const [newColor, setNewColor] = useState(DEFAULT_COLORS[5]);
   const [newFreetext, setNewFreetext] = useState(false);
+  const [newPrice, setNewPrice] = useState("0,00");
 
   async function create() {
     setError(null);
     if (!newLabel.trim()) {
       setError("Name fehlt.");
+      return;
+    }
+    const cents = eurToCents(newPrice);
+    if (cents === null) {
+      setError("Preis ungültig.");
       return;
     }
     const res = await fetch("/api/admin/categories", {
@@ -46,6 +54,7 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
         label: newLabel.trim(),
         color: newColor,
         freetext: newFreetext,
+        priceCents: cents,
       }),
     });
     if (!res.ok) {
@@ -55,6 +64,7 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
     setNewLabel("");
     setNewColor(DEFAULT_COLORS[5]);
     setNewFreetext(false);
+    setNewPrice("0,00");
     startTransition(() => router.refresh());
   }
 
@@ -85,7 +95,7 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
 
       <section className="rounded-2xl bg-neutral-900 p-5 ring-1 ring-neutral-800">
         <h2 className="mb-3 text-lg font-semibold">Neue Kategorie</h2>
-        <div className="grid gap-3 md:grid-cols-[2fr_auto_auto_auto]">
+        <div className="grid gap-3 md:grid-cols-[2fr_auto_auto_auto_auto]">
           <input
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
@@ -93,6 +103,16 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
             maxLength={60}
             className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-neutral-600"
           />
+          <div className="flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2">
+            <input
+              value={newPrice}
+              onChange={(e) => setNewPrice(e.target.value)}
+              inputMode="decimal"
+              placeholder="0,00"
+              className="w-20 bg-transparent text-right outline-none"
+            />
+            <span className="text-sm text-neutral-400">€</span>
+          </div>
           <input
             type="color"
             value={newColor}
@@ -129,6 +149,7 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
             <tr>
               <th className="px-4 py-3 text-left">#</th>
               <th className="px-4 py-3 text-left">Name</th>
+              <th className="px-4 py-3 text-left">Preis</th>
               <th className="px-4 py-3 text-left">Farbe</th>
               <th className="px-4 py-3 text-left">Texteingabe</th>
               <th className="px-4 py-3 text-right">Striche gesamt</th>
@@ -160,6 +181,25 @@ export function CategoriesClient({ categories }: { categories: Cat[] }) {
                     }}
                     className="w-full rounded bg-neutral-800 px-2 py-1"
                   />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      defaultValue={centsToEurInput(c.priceCents)}
+                      inputMode="decimal"
+                      onBlur={(e) => {
+                        const cents = eurToCents(e.target.value);
+                        if (cents === null) {
+                          alert("Preis ungültig.");
+                          e.target.value = centsToEurInput(c.priceCents);
+                          return;
+                        }
+                        if (cents !== c.priceCents) patch(c.id, { priceCents: cents });
+                      }}
+                      className="w-20 rounded bg-neutral-800 px-2 py-1 text-right tabular-nums"
+                    />
+                    <span className="text-xs text-neutral-500">€</span>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">

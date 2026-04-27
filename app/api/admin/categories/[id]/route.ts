@@ -8,6 +8,7 @@ const Patch = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   freetext: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+  priceCents: z.number().int().min(0).max(100000).optional(),
 });
 
 async function ensureAdmin() {
