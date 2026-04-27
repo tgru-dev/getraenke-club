@@ -178,7 +178,7 @@ export function KioskBoard({
   return (
     <main
       onPointerDown={armIdle}
-      className="mx-auto flex min-h-dvh w-full flex-col p-4 sm:p-6"
+      className="mx-auto flex h-dvh w-full flex-col overflow-hidden p-4 sm:p-6"
     >
       <header className="mb-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -216,7 +216,7 @@ export function KioskBoard({
       </header>
 
       {step === "pick" && (
-        <>
+        <div className="flex flex-1 flex-col overflow-y-auto">
           <p className="mb-4 text-sm text-neutral-400">Wer trinkt?</p>
           {users.length === 0 ? (
             <p className="rounded-2xl bg-neutral-900 p-6 text-neutral-400">
@@ -238,11 +238,11 @@ export function KioskBoard({
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {step === "pin" && selected && (
-        <div className="flex flex-col items-center gap-6">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-hidden">
           <UserAvatar name={selected.name} size={96} highlighted />
           <div className="text-center">
             <p className="text-sm text-neutral-400">Hallo,</p>
@@ -267,24 +267,21 @@ export function KioskBoard({
       )}
 
       {step === "category" && selected && (
-        <div className="flex flex-col items-center gap-6">
-          <UserAvatar name={selected.name} size={72} highlighted />
-          <p className="text-xl font-semibold">{selected.name} – was wird's?</p>
-          <div
-            className="grid w-full gap-4 sm:gap-6"
-            style={{
-              gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))`,
-            }}
-          >
+        <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden">
+          <UserAvatar name={selected.name} size={56} highlighted />
+          <p className="text-lg font-semibold sm:text-xl">
+            {selected.name} – was wird's?
+          </p>
+          <div className="grid w-full flex-1 grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-3">
             {categories.map((c) => (
               <button
                 key={c.id}
                 onClick={() => pickCategory(c)}
                 disabled={busy}
-                className="flex aspect-square flex-col items-center justify-between rounded-3xl p-6 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60 sm:p-8"
+                className="flex h-full w-full flex-col items-center justify-between rounded-3xl p-4 text-left shadow-lg transition active:scale-[0.97] disabled:opacity-60 sm:p-8"
                 style={{ backgroundColor: c.color, color: "#0b0d12" }}
               >
-                <span className="text-2xl font-bold leading-tight sm:text-3xl">
+                <span className="text-xl font-bold leading-tight sm:text-3xl">
                   {c.label}
                 </span>
                 <span className="self-end text-sm font-semibold uppercase opacity-70 sm:text-base">
@@ -309,7 +306,7 @@ export function KioskBoard({
       )}
 
       {step === "confirm" && lastBooking && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden text-center">
           <div
             className="flex h-32 w-32 items-center justify-center rounded-full text-5xl"
             style={{ backgroundColor: lastBooking.color, color: "#0b0d12" }}
