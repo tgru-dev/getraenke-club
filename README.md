@@ -45,7 +45,7 @@ sudo apt install -y nodejs sqlite3 git
 # 2) App auschecken
 sudo mkdir -p /opt/drinks/data /opt/drinks/backups
 sudo chown -R pi:pi /opt/drinks
-git clone https://codeberg.org/tg-macos/getraenke-club.git /opt/drinks/app
+git clone https://github.com/tgru-dev/getraenke-club.git /opt/drinks/app
 cd /opt/drinks/app
 npm ci
 
