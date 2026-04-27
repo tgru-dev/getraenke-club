@@ -8,7 +8,7 @@ export default async function KioskPage() {
   // Schutz pro Buchung: PIN des Mitglieds + Rate-Limit serverseitig.
   const [users, categories] = await Promise.all([
     prisma.user.findMany({
-      where: { active: true },
+      where: { active: true, deletedAt: null },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),

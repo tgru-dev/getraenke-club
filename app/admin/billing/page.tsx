@@ -19,7 +19,7 @@ export default async function BillingPage({
   const [users, categories, perUserCat] = await Promise.all([
     prisma.user.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true, active: true },
+      select: { id: true, name: true, active: true, deletedAt: true },
     }),
     prisma.category.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.tally.groupBy({
@@ -121,9 +121,11 @@ export default async function BillingPage({
               >
                 <td className="px-4 py-3 font-medium">
                   {user.name}
-                  {!user.active && (
+                  {user.deletedAt ? (
+                    <span className="ml-2 text-xs text-red-400">gelöscht</span>
+                  ) : !user.active ? (
                     <span className="ml-2 text-xs text-neutral-500">inaktiv</span>
-                  )}
+                  ) : null}
                 </td>
                 {categories.map((c) => (
                   <td

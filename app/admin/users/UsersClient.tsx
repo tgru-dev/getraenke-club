@@ -63,6 +63,27 @@ export function UsersClient({ users }: { users: User[] }) {
     startTransition(() => router.refresh());
   }
 
+  async function rename(id: string, current: string) {
+    const next = window.prompt("Neuer Name:", current);
+    if (!next) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === current) return;
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      const map: Record<string, string> = {
+        name_taken: "Name ist bereits vergeben.",
+      };
+      alert(map[data?.error] ?? "Umbenennen fehlgeschlagen.");
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
   async function toggleActive(id: string, active: boolean) {
     const res = await fetch(`/api/admin/users/${id}`, {
       method: "PATCH",
@@ -86,8 +107,8 @@ export function UsersClient({ users }: { users: User[] }) {
   async function remove(id: string, name: string, tallyCount: number) {
     const msg =
       tallyCount > 0
-        ? `„${name}" wirklich löschen? Dabei werden auch ${tallyCount} Striche unwiderruflich gelöscht.`
-        : `„${name}" wirklich löschen?`;
+        ? `„${name}" löschen? Das Mitglied wird ausgeblendet, ${tallyCount} bestehende Striche bleiben in der Historie erhalten.`
+        : `„${name}" löschen?`;
     if (!window.confirm(msg)) return;
     const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -182,7 +203,13 @@ export function UsersClient({ users }: { users: User[] }) {
                 </td>
                 <td className="px-4 py-3 tabular-nums">{u.tallyCount}</td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      onClick={() => rename(u.id, u.name)}
+                      className="rounded bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700"
+                    >
+                      Umbenennen
+                    </button>
                     <button
                       onClick={() => setPin(u.id)}
                       className="rounded bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700"

@@ -52,7 +52,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (parsed.data.role) data.role = parsed.data.role;
   if (typeof parsed.data.active === "boolean") data.active = parsed.data.active;
 
-  const after = await prisma.user.update({ where: { id }, data });
+  let after;
+  try {
+    after = await prisma.user.update({ where: { id }, data });
+  } catch (e: unknown) {
+    if (
+      typeof e === "object" &&
+      e !== null &&
+      "code" in e &&
+      (e as { code?: unknown }).code === "P2002"
+    ) {
+      return NextResponse.json({ error: "name_taken" }, { status: 409 });
+    }
+    throw e;
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -109,11 +122,13 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     }
   }
 
-  // Cascade: alle Striche dieses Mitglieds gehen mit weg.
-  await prisma.tally.deleteMany({ where: { userId: id } });
-  // AuditLog-Einträge des Actors müssen auch weg, sonst FK-Verletzung.
-  await prisma.auditLog.deleteMany({ where: { actorUserId: id } });
-  await prisma.user.delete({ where: { id } });
+  // Soft-Delete: Mitglied wird inaktiviert, History bleibt erhalten.
+  // Striche, AuditLog und Buchungen bleiben in der DB und behalten den
+  // Namensbezug (User-Datensatz wird nicht gelöscht).
+  await prisma.user.update({
+    where: { id },
+    data: { active: false, deletedAt: new Date() },
+  });
 
   await prisma.auditLog.create({
     data: {

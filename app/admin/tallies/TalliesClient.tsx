@@ -8,6 +8,7 @@ type UserRef = { id: string; name: string };
 type RecentRow = {
   id: string;
   userName: string;
+  userDeleted: boolean;
   categoryLabel: string;
   categoryColor: string;
   source: string;
@@ -205,6 +206,11 @@ export function TalliesClient({
                         }`}
                       >
                         {t.userName}
+                        {t.userDeleted && (
+                          <span className="ml-2 text-xs text-red-400">
+                            gelöscht
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span

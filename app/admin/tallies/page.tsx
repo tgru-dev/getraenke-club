@@ -52,7 +52,7 @@ export default async function TalliesPage({
       orderBy: { createdAt: "desc" },
       take: 100,
       include: {
-        user: { select: { name: true } },
+        user: { select: { name: true, deletedAt: true } },
         category: { select: { label: true, color: true } },
       },
     }),
@@ -88,6 +88,7 @@ export default async function TalliesPage({
       recent={recent.map((t) => ({
         id: t.id,
         userName: t.user.name,
+        userDeleted: t.user.deletedAt !== null,
         categoryLabel: t.category.label,
         categoryColor: t.category.color,
         source: t.source,

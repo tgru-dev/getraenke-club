@@ -13,7 +13,7 @@ export default async function LoginPage() {
   }
 
   const users = await prisma.user.findMany({
-    where: { active: true },
+    where: { active: true, deletedAt: null },
     select: { name: true },
     orderBy: { name: "asc" },
   });
