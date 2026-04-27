@@ -14,13 +14,22 @@ if (!password || password.length < 32) {
   }
 }
 
+// Secure-Flag: standardmäßig in Produktion an, kann via SESSION_COOKIE_SECURE
+// überschrieben werden (z.B. "false" für reinen LAN-Test ohne HTTPS).
+const cookieSecure = (() => {
+  const override = process.env.SESSION_COOKIE_SECURE;
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return process.env.NODE_ENV === "production";
+})();
+
 export const sessionOptions: SessionOptions = {
   password: password ?? "dev-only-fallback-secret-bitte-in-prod-setzen-32",
   cookieName: "drinks_session",
   cookieOptions: {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure,
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 Tage
   },
