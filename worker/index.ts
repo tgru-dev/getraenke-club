@@ -28,8 +28,7 @@ function err(c: Context, status: 400 | 401 | 403 | 404 | 409 | 423, message: str
 // Schwache PINs ablehnen: alle Ziffern gleich (1111), auf-/absteigende Folgen
 // (1234, 4321, 0123) und Doppelmuster (1212). Gilt ueberall, wo eine PIN
 // gesetzt wird — bestehende PINs bleiben unberuehrt.
-const WEAK_PIN_ERROR =
-  "Zu unsichere PIN – bitte keine Wiederholungen (1111, 1212) oder Folgen (1234, 4321)";
+const WEAK_PIN_ERROR = "Zu unsichere PIN";
 
 function isWeakPin(pin: string): boolean {
   if (/^(\d)\1{3}$/.test(pin)) return true; // 0000–9999 mit gleichen Ziffern
