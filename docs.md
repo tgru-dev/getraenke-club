@@ -207,7 +207,12 @@ Zeitraum-Parameter `from`/`to`: Epoch-ms, **`to` exklusiv**. Fehlend → 0 bzw. 
 
 1. **PIN-Speicherung**: `pin_hash = SHA-256(pin_salt + ":" + pin)` (hex). Kein
    Pepper, kein Stretching — siehe §1.2. Implementierung: `worker/auth.ts`.
-2. **Rate-Limiting** (`checkPin()` in `worker/index.ts`): Jeder Fehlversuch
+2. **Schwache PINs verboten** (`validateNewPin()`/`isWeakPin()` in `worker/index.ts`):
+   abgelehnt werden gleiche Ziffern (1111), Doppelmuster (1212) und auf-/absteigende
+   Folgen (1234, 4321, 0123). Gilt serverseitig an ALLEN Stellen, die eine PIN
+   setzen (Setup, Signup, PIN ändern, Admin-Anlage, Admin-PIN-Reset); bestehende
+   PINs sind nicht betroffen.
+3. **Rate-Limiting** (`checkPin()` in `worker/index.ts`): Jeder Fehlversuch
    inkrementiert `failed_attempts`. Beim 5. Versuch (`MAX_FAILED_ATTEMPTS`) wird
    `locked_until = now + 5 min` gesetzt und der Zähler zurückgesetzt. Solange
    gesperrt → HTTP 423 mit Restminuten. Erfolgreicher Login setzt beides zurück.

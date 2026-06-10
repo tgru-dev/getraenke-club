@@ -25,6 +25,28 @@ function err(c: Context, status: 400 | 401 | 403 | 404 | 409 | 423, message: str
   return c.json({ error: message }, status);
 }
 
+// Schwache PINs ablehnen: alle Ziffern gleich (1111), auf-/absteigende Folgen
+// (1234, 4321, 0123) und Doppelmuster (1212). Gilt ueberall, wo eine PIN
+// gesetzt wird — bestehende PINs bleiben unberuehrt.
+const WEAK_PIN_ERROR =
+  "Zu unsichere PIN – bitte keine Wiederholungen (1111, 1212) oder Folgen (1234, 4321)";
+
+function isWeakPin(pin: string): boolean {
+  if (/^(\d)\1{3}$/.test(pin)) return true; // 0000–9999 mit gleichen Ziffern
+  if (/^(\d\d)\1$/.test(pin)) return true; // 1212, 4747, …
+  const d = [...pin].map(Number);
+  const ascending = d.every((v, i) => i === 0 || v === d[i - 1] + 1);
+  const descending = d.every((v, i) => i === 0 || v === d[i - 1] - 1);
+  return ascending || descending;
+}
+
+/** Prueft Format + Staerke einer neuen PIN; gibt Fehlermeldung oder null zurueck. */
+function validateNewPin(pin: string | undefined): string | null {
+  if (!pin || !/^\d{4}$/.test(pin)) return "PIN muss genau 4 Ziffern haben";
+  if (isWeakPin(pin)) return WEAK_PIN_ERROR;
+  return null;
+}
+
 async function audit(db: D1Database, actorId: number | null, action: string, details: unknown) {
   await db
     .prepare("INSERT INTO audit_log (actor_id, action, details, created_at) VALUES (?, ?, ?, ?)")
@@ -148,14 +170,14 @@ app.get("/setup/status", async (c) => {
 
 app.post("/setup", async (c) => {
   const { name, pin } = await c.req.json<{ name?: string; pin?: string }>();
-  if (!name?.trim() || !pin || !/^\d{4}$/.test(pin)) {
-    return err(c, 400, "Name und 4-stellige PIN erforderlich");
-  }
+  if (!name?.trim()) return err(c, 400, "Name erforderlich");
+  const pinError = validateNewPin(pin);
+  if (pinError) return err(c, 400, pinError);
   const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM members").first<{ n: number }>();
   if ((row?.n ?? 0) > 0) return err(c, 409, "Setup wurde bereits durchgeführt");
 
   const salt = randomHex(16);
-  const hash = await hashPin(pin, salt);
+  const hash = await hashPin(pin!, salt);
   const result = await c.env.DB.prepare(
     "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, 'vorstand', '#f5a524', ?)"
   )
@@ -180,10 +202,10 @@ app.post("/signup", async (c) => {
     code?: string;
   }>();
   const trimmed = name?.trim() ?? "";
-  if (!trimmed || !pin || !/^\d{4}$/.test(pin)) {
-    return err(c, 400, "Name und 4-stellige PIN erforderlich");
-  }
+  if (!trimmed) return err(c, 400, "Name erforderlich");
   if (trimmed.length > 40) return err(c, 400, "Name zu lang (max. 40 Zeichen)");
+  const pinError = validateNewPin(pin);
+  if (pinError) return err(c, 400, pinError);
 
   // Optionaler Club-Code (vom Vorstand in den Einstellungen gesetzt)
   const signupCode = (await getSetting(c.env.DB, "signupCode"))?.trim();
@@ -203,7 +225,7 @@ app.post("/signup", async (c) => {
   if (existing) return err(c, 409, "Dieser Name ist bereits vergeben");
 
   const salt = randomHex(16);
-  const hash = await hashPin(pin, salt);
+  const hash = await hashPin(pin!, salt);
   const memberColor = /^#[0-9a-fA-F]{6}$/.test(color ?? "") ? color! : "#f5a524";
   const result = await c.env.DB.prepare(
     "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, 'mitglied', ?, ?)"
@@ -283,14 +305,14 @@ app.get("/auth/me", requireAuth, async (c) => {
 app.post("/auth/pin", requireAuth, async (c) => {
   const auth = c.get("auth");
   const { currentPin, newPin } = await c.req.json<{ currentPin?: string; newPin?: string }>();
-  if (!currentPin || !newPin || !/^\d{4}$/.test(newPin)) {
-    return err(c, 400, "Neue PIN muss 4 Ziffern haben");
-  }
+  if (!currentPin) return err(c, 400, "Aktuelle PIN erforderlich");
+  const pinError = validateNewPin(newPin);
+  if (pinError) return err(c, 400, pinError);
   const result = await checkPin(c.env.DB, auth.sub, currentPin);
   if ("error" in result) return err(c, result.locked ? 423 : 401, result.error);
 
   const salt = randomHex(16);
-  const hash = await hashPin(newPin, salt);
+  const hash = await hashPin(newPin!, salt);
   await c.env.DB.prepare("UPDATE members SET pin_hash = ?, pin_salt = ? WHERE id = ?")
     .bind(hash, salt, auth.sub)
     .run();
@@ -564,12 +586,12 @@ app.post("/admin/members", requireAdmin, async (c) => {
     role?: string;
     color?: string;
   }>();
-  if (!name?.trim() || !pin || !/^\d{4}$/.test(pin)) {
-    return err(c, 400, "Name und 4-stellige PIN erforderlich");
-  }
+  if (!name?.trim()) return err(c, 400, "Name erforderlich");
+  const pinError = validateNewPin(pin);
+  if (pinError) return err(c, 400, pinError);
   const memberRole = role === "vorstand" ? "vorstand" : "mitglied";
   const salt = randomHex(16);
-  const hash = await hashPin(pin, salt);
+  const hash = await hashPin(pin!, salt);
   const result = await c.env.DB.prepare(
     "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, ?, ?, ?)"
   )
@@ -611,7 +633,8 @@ app.patch("/admin/members/:id", requireAdmin, async (c) => {
   let pinHash = member.pin_hash;
   let pinSalt = member.pin_salt;
   if (body.pin) {
-    if (!/^\d{4}$/.test(body.pin)) return err(c, 400, "PIN muss 4 Ziffern haben");
+    const pinError = validateNewPin(body.pin);
+    if (pinError) return err(c, 400, pinError);
     pinSalt = randomHex(16);
     pinHash = await hashPin(body.pin, pinSalt);
     changes.push("PIN zurückgesetzt");
