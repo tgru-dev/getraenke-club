@@ -400,6 +400,13 @@ npm run deploy             # build + wrangler deploy -c dist/getraenke_club/wran
 ```
 
 **Stolpersteine (alle schon einmal real passiert bzw. relevant):**
+- **`run_worker_first: ["/api/*"]` ist Pflicht** (assets-Block der wrangler.jsonc):
+  Mit `not_found_handling: single-page-application` beantwortet Cloudflare
+  Browser-**Navigationen** (Sec-Fetch-Mode: navigate) auf unbekannte Pfade direkt
+  mit der index.html, OHNE den Worker aufzurufen — auch auf `/api/*`. Folge: Der
+  CSV-Download-Link (ein Navigations-Request!) lieferte HTML statt CSV. Per
+  `fetch()` aufgerufene API-Routen waren nie betroffen, weshalb curl-Tests das
+  nicht zeigten. Beim Reproduzieren immer `-H "Sec-Fetch-Mode: navigate"` mitschicken.
 - **Wrangler 4 braucht Node ≥ 22.** Auf diesem Mac liegt ein altes Node 20 unter
   `/usr/local/bin/node` (pkg-Install); Homebrew-Node 26 ist installiert →
   `export PATH=/opt/homebrew/opt/node/bin:$PATH` vor Wrangler-/Build-Befehle.
