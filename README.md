@@ -1,63 +1,107 @@
-# Getränke-Club 🍻
+<div align="center">
 
-Digitale Getränke-Strichliste für den Jugendclub. PWA (React + Vite) mit Hono-API
-auf Cloudflare Workers, Daten in Cloudflare D1.
+<img src="public/icon.svg" width="96" alt="Getränke-Club Logo" />
 
-## Features
+# 🍻 Getränke-Club
 
-- **Mitglieder-App** (mobil, Dark Mode): PIN-Login, 1 Tap = +1 Strich, 60-Sekunden-Undo,
-  Tagesübersicht, Monatsstand mit echten Strichlisten-Strichen, Verlauf, eigene PIN ändern.
-- **Tresenmodus** (`/tresen`): Kiosk fürs Tablet ohne Account. Mitglied antippen → PIN →
-  Kategorie → Bestätigung mit Undo. Nach 15 s Inaktivität automatischer Reset.
-- **Admin-Panel** (`/admin`, nur Rolle „Vorstand"): Strichlisten-Matrix mit Zeitraumfilter
-  und Drilldown, manuelle Korrekturen (mit Audit-Log), Statistiken (30-Tage-Trend,
-  Top-Trinker, Wochentag×Stunde-Heatmap), Mitglieder- und Kategorienverwaltung,
-  CSV-Export, Logo-Upload.
-- **Offline-tauglich**: Buchungen in der Mitglieder-App werden bei Funkloch lokal
-  gepuffert und automatisch idempotent nachgereicht (der Tresen braucht Netz, weil
-  die PIN serverseitig geprüft wird).
+**Die digitale Strichliste für den Jugendclub** — ein Tap pro Getränk, läuft auf jedem Handy, am Tresen-Tablet und im Vorstand-Büro.
 
-## Entwicklung
+[![React](https://img.shields.io/badge/React-19-58c4dc?logo=react&logoColor=white)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white)](https://vite.dev)
+[![Hono](https://img.shields.io/badge/Hono-4-e36002?logo=hono&logoColor=white)](https://hono.dev)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com)
+[![PWA](https://img.shields.io/badge/PWA-offline--f%C3%A4hig-5a0fc8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 
-Voraussetzung: Node.js ≥ 22.
+</div>
+
+---
+
+## ✨ Was die App kann
+
+### 📱 Mitglieder-App
+PIN-Login, dann **1 Tap = 1 Strich** auf großen Daumen-Kacheln — mit echten
+Strichlisten-Strichen als Zähler. 60-Sekunden-Undo, Tagesübersicht, Monatsstand,
+Verlauf nach Tagen, eigene PIN ändern. Im Dezember: 🎉 **Club Wrapped**, der
+persönliche Jahresrückblick.
+
+### 🍺 Tresenmodus
+Kiosk-Ansicht fürs Tablet am Tresen, ganz ohne Account: Mitglied antippen → PIN →
+Kategorie → fertig. Nach 1 Sekunde Bestätigung geht's automatisch zurück zur
+Übersicht, nach 15 Sekunden Inaktivität sowieso — nie ein „offener" Account.
+
+### 🛠 Vorstand (Admin-Panel)
+| Bereich | Funktion |
+|---|---|
+| **Strichliste** | Matrix Mitglied × Kategorie, Zeitraumfilter, Drilldown, Striche nachtragen, CSV-Export |
+| **Getränke-Log** | Jede Buchung lückenlos nachvollziehbar — Stornieren ✕ und Wiederherstellen jederzeit |
+| **Abrechnung** | Jahresansicht mit Kategoriepreisen und €-Summen pro Mitglied, druckfertig |
+| **Statistiken** | KPIs, 30-Tage-Trend, Kategorie-Donut, Top-Liste, Wochentag×Stunde-Heatmap |
+| **Verwaltung** | Mitglieder (anlegen, PIN-Reset, deaktivieren, endgültig löschen), Kategorien mit Farben & Preisen, Club-Logo, Registrierungs-Code, Audit-Log |
+
+### 📶 Offline-tauglich (PWA)
+Fällt das WLAN im Clubraum aus, puffert die Mitglieder-App Buchungen lokal und
+reicht sie automatisch nach — idempotent, es entstehen nie Duplikate.
+
+---
+
+## 🏗 Architektur
+
+Ein einziges Cloudflare-Worker-Projekt liefert alles aus — keine Server, keine Kosten im Free Tier:
+
+```mermaid
+flowchart LR
+    A["📱 Browser / PWA<br/>React 19 + Vite"] -->|"/api/*"| B["⚡ Hono-API<br/>im Worker"]
+    A -->|"alles andere"| C["📦 Static Assets<br/>SPA-Fallback"]
+    B --> D[("🗄 Cloudflare D1<br/>SQLite")]
+```
+
+Details — Datenmodell, alle API-Endpunkte, Sicherheitsmodell, Design-System,
+Stolpersteine — stehen im ausführlichen **[Entwickler-Handbuch (docs.md)](docs.md)**.
+
+---
+
+## 🚀 Entwicklung
+
+Voraussetzung: **Node.js ≥ 22**
 
 ```bash
 npm install
 npm run db:migrate:local   # lokale D1-Datenbank anlegen
-npm run dev                # Vite-Dev-Server mit lokalem Worker + D1
+npm run dev                # Vite-Dev-Server mit Worker + D1, Hot Reload
 ```
 
-Beim ersten Start `/setup` öffnen (passiert automatisch) und das erste
-Vorstandskonto anlegen.
+Beim ersten Start landet man automatisch auf `/setup` und legt das erste
+Vorstandskonto an.
 
-## Deployment auf Cloudflare
+| Befehl | Zweck |
+|---|---|
+| `npm run dev` | Entwicklung mit Hot Reload |
+| `npm run check` | TypeScript-Check |
+| `npm run build` | Production-Build (SPA + Worker) |
+| `npm run preview` | Production-Build lokal testen |
+| `npm run deploy` | Build + Deploy zu Cloudflare |
 
-1. **D1-Datenbank anlegen** und die ausgegebene ID in `wrangler.jsonc` unter
-   `database_id` eintragen:
-   ```bash
-   npx wrangler d1 create getraenke-club
-   ```
-2. **Migrationen auf die echte Datenbank anwenden:**
-   ```bash
-   npm run db:migrate:remote
-   ```
-3. **Auth-Secret setzen** (ersetzt den Dev-Wert aus `wrangler.jsonc`):
-   ```bash
-   npx wrangler secret put AUTH_SECRET   # langen Zufallswert eingeben
-   ```
-4. **Deployen:**
-   ```bash
-   npm run deploy
-   ```
+## ☁️ Deployment
 
-Danach die Worker-URL öffnen → Ersteinrichtung durchlaufen → Mitglieder anlegen.
-Auf dem Tresen-Tablet `/tresen` öffnen und als Vollbild-App ("Zum Startbildschirm
-hinzufügen") einrichten.
+```bash
+npx wrangler d1 create getraenke-club        # 1. D1 anlegen, ID in wrangler.jsonc eintragen
+npm run db:migrate:remote                    # 2. Schema auf die echte DB
+npx wrangler secret put AUTH_SECRET          # 3. langen Zufallswert setzen
+npm run deploy                               # 4. los geht's 🎉
+```
 
-## Sicherheitsmodell
+Danach die Worker-URL öffnen → Ersteinrichtung → Mitglieder anlegen (oder per
+`/signup` selbst registrieren lassen, optional mit Club-Code). Auf dem
+Tresen-Tablet `/tresen` öffnen und „Zum Startbildschirm hinzufügen".
 
-Alle nutzen 4-stellige PINs (gehasht mit Salt gespeichert). Da der PIN-Raum klein
-ist, schützt serverseitiges Rate-Limiting: nach 5 Fehlversuchen wird das Konto für
-5 Minuten gesperrt. Admin-Aktionen (Korrekturen, Löschungen, PIN-Resets) landen im
-Audit-Log. Mitglieder werden deaktiviert statt gelöscht, damit historische Striche
-erhalten bleiben.
+## 🔐 Sicherheit in Kürze
+
+Alle nutzen 4-stellige PINs (gehasht + gesalzen, schwache PINs wie `1234` werden
+abgelehnt). Da der PIN-Raum klein ist, schützt **Rate-Limiting**: 5 Fehlversuche →
+5 Minuten Sperre. Jede Admin-Aktion landet im Audit-Log, Buchungen werden nie hart
+gelöscht (Soft-Delete), Mitglieder-Historie bleibt auch nach Konto-Löschung erhalten.
+
+## 📜 Historie
+
+- **`v2`** (aktuell) — kompletter Neuaufbau: React SPA + Hono auf Cloudflare Workers/D1
+- **`v1`** — die ursprüngliche Next.js-Version, als Git-Tag konserviert (`git diff v1 v2` funktioniert)
