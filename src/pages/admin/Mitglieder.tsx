@@ -139,7 +139,19 @@ export function Mitglieder() {
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-3">
                     <Avatar name={m.name} color={m.color} size={32} />
-                    <span className="font-medium">{m.name}</span>
+                    <input
+                      key={`name-${m.id}-${m.name}`}
+                      defaultValue={m.name}
+                      title="Zum Umbenennen einfach reinklicken"
+                      onBlur={(e) => {
+                        const neu = e.target.value.trim();
+                        if (neu && neu !== m.name) void patch(m.id, { name: neu });
+                        else e.target.value = m.name;
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                      className="w-full max-w-48 rounded-lg border border-transparent bg-transparent px-2 py-1 font-medium
+                                 hover:border-line focus:border-amber/60 focus:bg-raised focus:outline-none"
+                    />
                   </div>
                 </td>
                 <td className="px-4 py-2.5">

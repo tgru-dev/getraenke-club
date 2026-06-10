@@ -622,6 +622,15 @@ app.patch("/admin/members/:id", requireAdmin, async (c) => {
 
   const changes: string[] = [];
   const name = body.name?.trim() || member.name;
+  if (name !== member.name) {
+    if (name.length > 40) return err(c, 400, "Name zu lang (max. 40 Zeichen)");
+    const duplicate = await c.env.DB.prepare(
+      "SELECT id FROM members WHERE active = 1 AND deleted_at IS NULL AND lower(name) = lower(?) AND id != ?"
+    )
+      .bind(name, id)
+      .first<{ id: number }>();
+    if (duplicate) return err(c, 409, "Dieser Name ist bereits vergeben");
+  }
   const role = body.role === "vorstand" || body.role === "mitglied" ? body.role : member.role;
   const active = typeof body.active === "boolean" ? (body.active ? 1 : 0) : member.active;
   const color = body.color || member.color;

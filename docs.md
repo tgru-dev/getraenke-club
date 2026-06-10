@@ -183,7 +183,7 @@ Download-Links wie CSV nötig). Middleware: `requireAuth` (gültiges Token),
 |---|---|
 | `GET /admin/members` | Alle Mitglieder inkl. deaktivierter |
 | `POST /admin/members` `{name, pin, role?, color?}` | Anlegen (Audit) |
-| `PATCH /admin/members/:id` `{name?, role?, active?, color?, pin?}` | Ändern; `pin` = PIN-Reset (setzt auch failed_attempts/locked_until zurück). Eigenes Konto kann nicht deaktiviert/herabgestuft werden (400). Audit |
+| `PATCH /admin/members/:id` `{name?, role?, active?, color?, pin?}` | Ändern; `name` = Umbenennen (Duplikat-Check unter aktiven Mitgliedern → 409, max. 40 Zeichen; UI: Inline-Edit in der Mitgliederverwaltung), `pin` = PIN-Reset (setzt auch failed_attempts/locked_until zurück). Eigenes Konto kann nicht deaktiviert/herabgestuft werden (400). Audit mit Alt→Neu |
 | `DELETE /admin/members/:id` | **Finales Löschen** = Tombstone (`members.deleted_at`, active=0, PIN unbrauchbar). Konto verschwindet aus Login/Tresen/Verwaltung/Übersichten; Buchungen bleiben im Getränke-Log, in Stats, CSV und Abrechnung (Name + „(gelöscht)"-Marker). Eigenes Konto: 400. Audit `mitglied_geloescht`. Nicht umkehrbar (UI bietet es nur für deaktivierte Mitglieder an) |
 | `GET /admin/categories` | Alle Kategorien inkl. inaktiver |
 | `POST /admin/categories` / `PATCH /admin/categories/:id` | Pflege inkl. sort_order, free_text, active (Audit) |
