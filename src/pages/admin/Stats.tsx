@@ -17,6 +17,27 @@ const tooltipStyle = {
   color: "var(--color-ink)",
 };
 
+// Eigener Tooltip fuers Kreisdiagramm: der Recharts-Standard rendert den Text
+// bei Pie-Charts schwarz, egal was itemStyle/fill sagen — hier kommt die Farbe
+// garantiert aus dem Datenpunkt.
+function PieTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { name?: string; value?: number; payload?: { color?: string } }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const entry = payload[0];
+  return (
+    <div style={{ ...tooltipStyle, padding: "8px 12px" }}>
+      <span style={{ color: entry.payload?.color ?? "var(--color-ink)", fontWeight: 600 }}>
+        {entry.name}: {entry.value}
+      </span>
+    </div>
+  );
+}
+
 function formatDateShort(iso: string): string {
   return `${iso.slice(8)}.${iso.slice(5, 7)}.`;
 }
@@ -146,7 +167,7 @@ export function Stats() {
                       <Cell key={c.id} fill={c.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
+                  <Tooltip content={<PieTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
