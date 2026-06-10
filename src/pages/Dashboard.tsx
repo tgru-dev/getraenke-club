@@ -125,7 +125,7 @@ export function Dashboard() {
       <header className="animate-rise">
         <p className="text-muted">Moin {firstName} 👋</p>
         <h1 className="font-display text-2xl font-extrabold tracking-tight">
-          {todayTotal === 0 ? "Noch nüchtern heute?" : `Heute: ${todayTotal} Strich${todayTotal > 1 ? "e" : ""}`}
+          {todayTotal === 0 ? "Noch nüchtern?" : `Heute: ${todayTotal} Strich${todayTotal > 1 ? "e" : ""}`}
         </h1>
       </header>
 
