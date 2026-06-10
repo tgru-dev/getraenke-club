@@ -52,7 +52,8 @@ Cloudflare Worker ──── D1 (SQLite) Binding "DB"
 plan.md                  Ursprüngliche Anforderungen (nicht löschen)
 docs.md                  Dieses Handbuch
 README.md                Kurzanleitung Setup/Deployment
-wrangler.jsonc           Worker-Config: D1-Binding "DB", ASSETS-Binding, AUTH_SECRET-Dev-Var
+wrangler.jsonc           Worker-Config: D1-Binding "DB" (echte database_id), ASSETS-Binding
+.dev.vars                AUTH_SECRET fuer lokale Entwicklung (gitignored, NICHT deployen)
 vite.config.ts           react() + tailwindcss() + cloudflare() + VitePWA()
 tsconfig.json            Ein gemeinsames tsconfig für src/, worker/, shared/
 migrations/0001_init.sql Schema + Seed der 5 Standard-Kategorien
@@ -210,8 +211,13 @@ Zeitraum-Parameter `from`/`to`: Epoch-ms, **`to` exklusiv**. Fehlend → 0 bzw. 
    prüft Signatur + exp. **Rolle steckt im Token**: Wird ein Mitglied herabgestuft,
    wirkt das erst nach Token-Ablauf bzw. Re-Login (akzeptierter Trade-off; bei Bedarf
    in `requireAdmin` die Rolle live aus der DB lesen).
-4. **AUTH_SECRET**: Dev-Fallback in `wrangler.jsonc` `vars`; Produktion MUSS
-   `wrangler secret put AUTH_SECRET` setzen (Secret überschreibt die Var).
+4. **AUTH_SECRET**: In Produktion ein Cloudflare-Secret (`wrangler secret put
+   AUTH_SECRET`, gesetzt am 10.06.2026, 48 Zufallsbytes). Lokal kommt der Wert aus
+   `.dev.vars` (gitignored). **NIEMALS als `var` in `wrangler.jsonc` eintragen** —
+   eine gleichnamige Var überschreibt beim Deploy das Secret mit Klartext (ist
+   einmal passiert und wurde repariert; s. §8 Stolpersteine). Achtung: Ein
+   Secret-Wechsel invalidiert alle ausgegebenen Tokens → alle müssen sich neu
+   einloggen (PINs sind nicht betroffen, die Hashes nutzen kein Secret).
 5. **Öffentliche Endpunkte** (Mitgliederliste, Kategorien, Settings): bewusster
    Trade-off für eine club-interne App — Tresen und Login-Picker brauchen die Daten
    ohne Session. Es sind nur Namen/Farben/Rollen exponiert, keine PINs/Statistiken.
@@ -291,8 +297,11 @@ State-Machine in `Tresen.tsx`: `members → pin → categories → (note) → do
 - **Getränke-Log**: lückenlose Liste ALLER Buchungen inkl. stornierter
   (durchgestrichen + rotes Badge „storniert · Zeitpunkt · von Wem"). Filter:
   Zeitraum, Mitgliedsname (Substring), Checkbox „Stornierte zeigen". Quelle-Labels:
-  App/Tresen/Admin. Admins können hier jeden Strich **stornieren** (confirm-Dialog,
-  ohne Zeitfenster) und Stornierungen **wiederherstellen** — beides mit Audit-Eintrag.
+  App/Tresen/Admin. Admins können hier jeden Strich **stornieren** (rotes ✕-Icon
+  am Zeilenende mit confirm-Dialog, ohne Zeitfenster — anders als das 60-s-Limit
+  der Mitglieder) und Stornierungen per „wiederherstellen"-Link **rückgängig
+  machen** — beides mit Audit-Eintrag (`strich_geloescht` /
+  `strich_wiederhergestellt`).
 - **Statistiken**: KPI-Karten (Gesamt, Ø/Tag über die Zeitraumlänge, stärkster Tag,
   durstigste Person) · gestapeltes Tages-Balkendiagramm · Donut „Nach Kategorie" mit
   Prozent-Liste · Top-15 mit Medaillen · Heatmap Wochentag×Stunde mit Zeilensummen.
@@ -362,20 +371,36 @@ npm run db:migrate:remote  # Migrationen → echtes D1
 npm run deploy             # build + wrangler deploy -c dist/getraenke_club/wrangler.json
 ```
 
-**Stolpersteine:**
+**Stolpersteine (alle schon einmal real passiert bzw. relevant):**
 - **Wrangler 4 braucht Node ≥ 22.** Auf diesem Mac liegt ein altes Node 20 unter
   `/usr/local/bin/node` (pkg-Install); Homebrew-Node 26 ist installiert →
   `export PATH=/opt/homebrew/opt/node/bin:$PATH` vor Wrangler-/Build-Befehle.
 - Der Worker-Build-Ordner heißt `dist/getraenke_club` — **Unterstrich**, vom
   Cloudflare-Vite-Plugin aus dem Worker-Namen abgeleitet. Deploy IMMER über die
   dort generierte `wrangler.json` (macht das npm-Script).
-- `database_id` in `wrangler.jsonc` ist ein Platzhalter (Nullen) bis
-  `wrangler d1 create getraenke-club` gelaufen ist.
-- Erst-Deploy-Checkliste: D1 anlegen → ID eintragen → `db:migrate:remote` →
-  `wrangler secret put AUTH_SECRET` → `npm run deploy` → App öffnen → `/setup`.
+- **AUTH_SECRET-Falle**: Eine `var` namens AUTH_SECRET in `wrangler.jsonc`
+  überschreibt beim Deploy das gleichnamige Cloudflare-Secret durch den
+  Klartext-Wert — und blockiert umgekehrt `wrangler secret put` („Binding name
+  already in use"). Reihenfolge zur Reparatur: Var aus der Config entfernen →
+  deployen → dann `secret put`. Lokal stattdessen `.dev.vars` verwenden.
+- **Lokale D1 hängt an der `database_id`**: Miniflare benennt die lokale
+  SQLite-Datei nach einem Hash der ID. Ändert sich die `database_id` in
+  `wrangler.jsonc` (z. B. Platzhalter → echte ID), entsteht lokal eine NEUE,
+  leere Datenbank. Alte Daten retten: alte Datei in
+  `.wrangler/state/v3/d1/miniflare-D1DatabaseObject/` finden, dort
+  `PRAGMA wal_checkpoint(TRUNCATE);` ausführen, Datei über die neue kopieren
+  (Server vorher stoppen, `-shm`/`-wal` der neuen Datei löschen).
+- Beim interaktiven `wrangler d1 create` bietet Wrangler an, die DB selbst in die
+  Config einzutragen — das erzeugt einen ZWEITEN `d1_databases`-Eintrag mit
+  falschem Binding-Namen (und ggf. `"remote": true`, was lokalen Dev auf die
+  Prod-DB umbiegt!). Immer manuell die ID in den bestehenden `DB`-Eintrag
+  übernehmen und den Auto-Eintrag löschen.
 - Lokale D1-Daten liegen in `.wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite`
-  (direkt mit `sqlite3` inspizierbar — praktisch zum Debuggen).
+  (direkt mit `sqlite3` inspizierbar — praktisch zum Debuggen und für Testdaten).
 - Neue Migration: `migrations/0002_xxx.sql` anlegen, NIE 0001 nachträglich ändern.
+  Immer beides ausführen: `db:migrate:local` UND `db:migrate:remote`.
+- Hono + Middleware: `c.req.param("id")` ist als `string | undefined` typisiert,
+  wenn Middleware als zweites Argument übergeben wird → `?? ""` davor.
 
 **Smoke-Test nach Änderungen** (gegen `npm run preview`):
 ```bash
@@ -403,3 +428,60 @@ curl -s -X POST localhost:4173/api/tresen/book -H 'Content-Type: application/jso
   API-Endpoint für eine evtl. spätere Wiedereinführung erhalten.
 - D1-Free-Tier-Limits (Stand 2026: 5 GB, 5 Mio. Reads/Tag) sind für diesen
   Anwendungsfall um Größenordnungen ausreichend.
+- **Fehlbuchungen am Tresen korrigieren**: Da es dort kein Undo mehr gibt, ist der
+  vorgesehene Weg das Getränke-Log (✕-Button) oder der Strichlisten-Drilldown.
+
+---
+
+## 10. Produktions-Status, Repository & Historie
+
+### Produktion (Stand 10.06.2026)
+| Was | Wert |
+|---|---|
+| Live-URL | https://getraenke-club.timgruszczynski422.workers.dev |
+| Worker-Name | `getraenke-club` (Cloudflare-Account von timgruszczynski422@gmail.com) |
+| D1-Datenbank | `getraenke-club`, ID `a04af21a-eee9-4c0a-bc2b-86b8ee377ec5`, Region EEUR |
+| Migrationen remote | `0001_init.sql` angewendet |
+| Secrets | `AUTH_SECRET` als Cloudflare-Secret gesetzt (48 Zufallsbytes, base64url) |
+| Ersteinrichtung | erledigt — Vorstandskonto „tim" existiert; needsSetup=false |
+| Tresen-Tablet | `/tresen` öffnen und „Zum Startbildschirm hinzufügen" (Vollbild-PWA) |
+
+Deployment-Workflow für Änderungen: Code ändern → `npx tsc --noEmit` →
+`npm run deploy` (baut und deployt in einem Schritt). Bei Schema-Änderungen
+vorher `npm run db:migrate:remote` (und lokal `db:migrate:local`).
+
+### Git / GitHub
+- Repo: **https://github.com/tgru-dev/getraenke-club** (remote `origin`, Branch `main`)
+- Tag **`v1`** = die alte Next.js-Version (kompletter Stand vor dem Neuaufbau,
+  Commit `ba4ea16`) — bewusst in der History behalten statt neues Repo
+- Tag **`v2`** = der Neuaufbau (dieses Projekt), als EIN Commit auf die
+  v1-History aufgesetzt (`decbf38`), dadurch ist `git diff v1 v2` möglich
+- Nicht im Repo (`.gitignore`): `node_modules/`, `dist/`, `.wrangler/` (lokale DB!),
+  `.dev.vars`, `.claude/`, Logs — es liegen KEINE Secrets auf GitHub
+- Es gibt keine CI/CD: Deploy passiert manuell per `npm run deploy` vom Mac;
+  GitHub ist reine Code-Ablage
+
+### Änderungshistorie der v2 (alles am 10.06.2026)
+1. **Grundausbau** nach `plan.md`: Mitglieder-PWA, Tresen, Admin, Offline, D1.
+   Abweichungen vom Plan mit Nutzer abgestimmt (Stack, PIN-Modell, Avatare — §1.2).
+2. **Feinschliff-Runde**: Animations-Bug der Kacheln gefixt (§6.1 Animations-Falle),
+   Statistik-Seite ausgebaut (KPIs, Donut, Medaillen, Heatmap-Summen).
+3. **Upgrades**: Tagesreset der Kachel-Striche (Mitternachts-Check), Monatsliste
+   in Zahlen statt Tally, Getränke-Log-Seite + `/admin/log`-Endpoint,
+   PIN-Placeholder-Typografie gefixt.
+4. **Cloudflare-Deployment**: D1 angelegt, Migration remote, AUTH_SECRET-Vorfall
+   repariert (§8 Stolpersteine), `.dev.vars` eingeführt.
+5. **Tresen-Änderung**: Bestätigung 1 s statt 6 s, Undo-Button am Tresen entfernt.
+6. **Selbst-Registrierung** `/signup` (+ Guard-Logik, Audit `mitglied_registriert`,
+   Login-Link, geteilte `AVATAR_COLORS`).
+7. **Storno/Restore im Getränke-Log** (+ `POST /admin/drinks/:id/restore`,
+   Audit `strich_wiederhergestellt`), Storno-Button als ✕-Icon.
+8. **GitHub-Push** als v2 (siehe oben).
+
+### Lokale Entwicklungsumgebung (dieser Mac)
+- Lokale Test-DB enthält Spieldaten (Mitglieder „tim"/„Jimmy W", ~200 Buchungen,
+  Zusatz-Kategorie „Wein Sekt") — unabhängig von Produktion.
+- Die lokalen Test-PINs sind nur dem Nutzer bekannt; für API-Tests ggf. ein
+  Wegwerf-Mitglied mit bekanntem Hash direkt per `sqlite3` einfügen und danach
+  löschen (Muster: `SHA-256("<salt>:<pin>")` hex in `pin_hash`).
+- Preview-Server für manuelle Tests: `npm run preview` (Port 4173).
