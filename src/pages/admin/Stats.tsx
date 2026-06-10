@@ -17,9 +17,6 @@ const tooltipStyle = {
   color: "var(--color-ink)",
 };
 
-// Recharts faerbt Tooltip-Eintraege sonst schwarz (Standard)
-const tooltipItemStyle = { color: "var(--color-ink)" };
-
 function formatDateShort(iso: string): string {
   return `${iso.slice(8)}.${iso.slice(5, 7)}.`;
 }
@@ -119,11 +116,8 @@ export function Stats() {
                   <CartesianGrid stroke="var(--color-line)" vertical={false} />
                   <XAxis dataKey="date" stroke="var(--color-muted)" fontSize={12} tickLine={false} />
                   <YAxis stroke="var(--color-muted)" fontSize={12} allowDecimals={false} tickLine={false} axisLine={false} width={32} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    itemStyle={tooltipItemStyle}
-                    cursor={{ fill: "rgba(245,165,36,0.08)" }}
-                  />
+                  {/* Eintraege erben die Balkenfarbe (= Kategoriefarbe) */}
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(245,165,36,0.08)" }} />
                   {categories.map((c) => (
                     <Bar key={c.id} dataKey={c.name} stackId="a" fill={c.color} radius={[3, 3, 0, 0]} maxBarSize={42} />
                   ))}
@@ -139,7 +133,8 @@ export function Stats() {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie
-                    data={catTotals}
+                    // fill im Datenobjekt -> Tooltip-Text erscheint in der Kategoriefarbe
+                    data={catTotals.map((c) => ({ ...c, fill: c.color }))}
                     dataKey="count"
                     nameKey="name"
                     innerRadius={52}
@@ -151,7 +146,7 @@ export function Stats() {
                       <Cell key={c.id} fill={c.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
+                  <Tooltip contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

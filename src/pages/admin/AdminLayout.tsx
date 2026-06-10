@@ -9,7 +9,7 @@ const nav = [
   { to: "/admin/stats", label: "Statistiken" },
   { to: "/admin/mitglieder", label: "Mitglieder" },
   { to: "/admin/kategorien", label: "Kategorien" },
-  { to: "/admin/audit", label: "Audit-Log" },
+  // Audit-Log bewusst nicht verlinkt — nur direkt per URL /admin/audit erreichbar
   { to: "/admin/einstellungen", label: "Einstellungen" },
 ];
 

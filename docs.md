@@ -293,8 +293,9 @@ State-Machine in `Tresen.tsx`: `members → pin → categories → (note) → do
 ### 6.3 Admin
 - `AdminLayout`: Sidebar (auf schmalen Screens nur Anfangsbuchstaben). Navigation:
   Strichliste, Getränke-Log, Abrechnung, Statistiken, Mitglieder, Kategorien,
-  Audit-Log, Einstellungen. **Neue Admin-Seite = Eintrag in `nav[]` + Lazy-Route
-  in `App.tsx`** (alle Admin-Seiten + Wrapped sind `React.lazy`-Chunks; das
+  Einstellungen. Das **Audit-Log ist bewusst NICHT verlinkt** (Nutzerwunsch) —
+  Route existiert weiter, nur direkt über `/admin/audit` erreichbar.
+  **Neue Admin-Seite = Eintrag in `nav[]` + Lazy-Route in `App.tsx`** (alle Admin-Seiten + Wrapped sind `React.lazy`-Chunks; das
   Haupt-Bundle der Mitglieder-App bleibt dadurch bei ~265 KB statt ~670 KB —
   Recharts steckt im Stats-Chunk).
 - **Abrechnung**: Jahres-Auswahl (laufendes Jahr − 3), Matrix Mitglied×Kategorie
