@@ -1,0 +1,834 @@
+import { Hono } from "hono";
+import type { Context } from "hono";
+import { hashPin, randomHex, signToken, verifyToken, type TokenPayload } from "./auth";
+import { berlinDate, berlinTime, berlinHour, berlinWeekday } from "./time";
+
+interface Env {
+  DB: D1Database;
+  AUTH_SECRET: string;
+  ASSETS: Fetcher;
+}
+
+type AppContext = { Bindings: Env; Variables: { auth: TokenPayload } };
+
+const app = new Hono<AppContext>().basePath("/api");
+
+const UNDO_WINDOW_MS = 60_000;
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_DURATION_MS = 5 * 60_000;
+const TOKEN_TTL_SHORT = 12 * 60 * 60_000; // 12 h
+const TOKEN_TTL_LONG = 90 * 24 * 60 * 60_000; // 90 Tage ("merken")
+
+// ---------- Hilfsfunktionen ----------
+
+function err(c: Context, status: 400 | 401 | 403 | 404 | 409 | 423, message: string) {
+  return c.json({ error: message }, status);
+}
+
+async function audit(db: D1Database, actorId: number | null, action: string, details: unknown) {
+  await db
+    .prepare("INSERT INTO audit_log (actor_id, action, details, created_at) VALUES (?, ?, ?, ?)")
+    .bind(actorId, action, JSON.stringify(details), Date.now())
+    .run();
+}
+
+interface MemberRow {
+  id: number;
+  name: string;
+  pin_hash: string;
+  pin_salt: string;
+  role: "mitglied" | "vorstand";
+  color: string;
+  active: number;
+  failed_attempts: number;
+  locked_until: number | null;
+  created_at: number;
+}
+
+/** Prueft PIN inkl. Rate-Limiting. Gibt das Mitglied zurueck oder eine Fehlermeldung. */
+async function checkPin(
+  db: D1Database,
+  memberId: number,
+  pin: string
+): Promise<{ member: MemberRow } | { error: string; locked?: boolean }> {
+  const member = await db
+    .prepare("SELECT * FROM members WHERE id = ? AND active = 1")
+    .bind(memberId)
+    .first<MemberRow>();
+  if (!member) return { error: "Mitglied nicht gefunden" };
+
+  const now = Date.now();
+  if (member.locked_until && member.locked_until > now) {
+    const minutes = Math.ceil((member.locked_until - now) / 60_000);
+    return { error: `Zu viele Fehlversuche. Gesperrt für ${minutes} Min.`, locked: true };
+  }
+
+  const hash = await hashPin(pin, member.pin_salt);
+  if (hash !== member.pin_hash) {
+    const attempts = member.failed_attempts + 1;
+    const lockedUntil = attempts >= MAX_FAILED_ATTEMPTS ? now + LOCK_DURATION_MS : null;
+    await db
+      .prepare("UPDATE members SET failed_attempts = ?, locked_until = ? WHERE id = ?")
+      .bind(lockedUntil ? 0 : attempts, lockedUntil, member.id)
+      .run();
+    return lockedUntil
+      ? { error: "Zu viele Fehlversuche. Gesperrt für 5 Min.", locked: true }
+      : { error: `Falsche PIN (Versuch ${attempts}/${MAX_FAILED_ATTEMPTS})` };
+  }
+
+  if (member.failed_attempts > 0 || member.locked_until) {
+    await db
+      .prepare("UPDATE members SET failed_attempts = 0, locked_until = NULL WHERE id = ?")
+      .bind(member.id)
+      .run();
+  }
+  return { member };
+}
+
+function publicMember(m: MemberRow) {
+  return { id: m.id, name: m.name, color: m.color, role: m.role };
+}
+
+const DRINK_SELECT = `
+  SELECT d.id, d.member_id AS memberId, m.name AS memberName,
+         d.category_id AS categoryId, c.name AS categoryName, c.color AS categoryColor,
+         d.note, d.source, d.created_at AS createdAt
+  FROM drinks d
+  JOIN members m ON m.id = d.member_id
+  JOIN categories c ON c.id = d.category_id
+  WHERE d.deleted_at IS NULL`;
+
+function parseRange(c: Context): { from: number; to: number } {
+  const from = parseInt(c.req.query("from") ?? "", 10);
+  const to = parseInt(c.req.query("to") ?? "", 10);
+  return {
+    from: Number.isFinite(from) ? from : 0,
+    to: Number.isFinite(to) ? to : Date.now() + 60_000,
+  };
+}
+
+// ---------- Auth-Middleware ----------
+
+function getToken(c: Context<AppContext>): string | null {
+  const header = c.req.header("Authorization");
+  if (header?.startsWith("Bearer ")) return header.slice(7);
+  // Query-Token fuer Download-Links (CSV-Export), wo keine Header moeglich sind
+  return c.req.query("token") ?? null;
+}
+
+const requireAuth = async (c: Context<AppContext>, next: () => Promise<void>) => {
+  const token = getToken(c);
+  const payload = token ? await verifyToken(token, c.env.AUTH_SECRET) : null;
+  if (!payload) return err(c, 401, "Nicht angemeldet");
+  c.set("auth", payload);
+  await next();
+};
+
+const requireAdmin = async (c: Context<AppContext>, next: () => Promise<void>) => {
+  const token = getToken(c);
+  const payload = token ? await verifyToken(token, c.env.AUTH_SECRET) : null;
+  if (!payload) return err(c, 401, "Nicht angemeldet");
+  if (payload.role !== "vorstand") return err(c, 403, "Nur für den Vorstand");
+  c.set("auth", payload);
+  await next();
+};
+
+// ---------- Setup (Erstinbetriebnahme) ----------
+
+app.get("/setup/status", async (c) => {
+  const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM members").first<{ n: number }>();
+  return c.json({ needsSetup: (row?.n ?? 0) === 0 });
+});
+
+app.post("/setup", async (c) => {
+  const { name, pin } = await c.req.json<{ name?: string; pin?: string }>();
+  if (!name?.trim() || !pin || !/^\d{4}$/.test(pin)) {
+    return err(c, 400, "Name und 4-stellige PIN erforderlich");
+  }
+  const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM members").first<{ n: number }>();
+  if ((row?.n ?? 0) > 0) return err(c, 409, "Setup wurde bereits durchgeführt");
+
+  const salt = randomHex(16);
+  const hash = await hashPin(pin, salt);
+  const result = await c.env.DB.prepare(
+    "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, 'vorstand', '#f5a524', ?)"
+  )
+    .bind(name.trim(), hash, salt, Date.now())
+    .run();
+  const id = result.meta.last_row_id as number;
+  await audit(c.env.DB, id, "setup", { name: name.trim() });
+  const token = await signToken(
+    { sub: id, role: "vorstand", exp: Date.now() + TOKEN_TTL_SHORT },
+    c.env.AUTH_SECRET
+  );
+  return c.json({ token, member: { id, name: name.trim(), color: "#f5a524", role: "vorstand" } });
+});
+
+// Selbst-Registrierung: legt IMMER ein normales Mitglied an (Rolle ist nicht
+// vom Client waehlbar). Erst moeglich, wenn die Ersteinrichtung gelaufen ist.
+app.post("/signup", async (c) => {
+  const { name, pin, color } = await c.req.json<{ name?: string; pin?: string; color?: string }>();
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed || !pin || !/^\d{4}$/.test(pin)) {
+    return err(c, 400, "Name und 4-stellige PIN erforderlich");
+  }
+  if (trimmed.length > 40) return err(c, 400, "Name zu lang (max. 40 Zeichen)");
+
+  const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM members").first<{ n: number }>();
+  if ((count?.n ?? 0) === 0) {
+    return err(c, 409, "Bitte zuerst die Ersteinrichtung unter /setup durchführen");
+  }
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM members WHERE active = 1 AND lower(name) = lower(?)"
+  )
+    .bind(trimmed)
+    .first<{ id: number }>();
+  if (existing) return err(c, 409, "Dieser Name ist bereits vergeben");
+
+  const salt = randomHex(16);
+  const hash = await hashPin(pin, salt);
+  const memberColor = /^#[0-9a-fA-F]{6}$/.test(color ?? "") ? color! : "#f5a524";
+  const result = await c.env.DB.prepare(
+    "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, 'mitglied', ?, ?)"
+  )
+    .bind(trimmed, hash, salt, memberColor, Date.now())
+    .run();
+  const id = result.meta.last_row_id as number;
+  await audit(c.env.DB, id, "mitglied_registriert", { name: trimmed });
+  const token = await signToken(
+    { sub: id, role: "mitglied", exp: Date.now() + TOKEN_TTL_SHORT },
+    c.env.AUTH_SECRET
+  );
+  return c.json({ token, member: { id, name: trimmed, color: memberColor, role: "mitglied" } });
+});
+
+// ---------- Oeffentlich (Login-Picker, Tresen, Branding) ----------
+
+app.get("/members/public", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, color, role FROM members WHERE active = 1 ORDER BY name COLLATE NOCASE"
+  ).all();
+  return c.json(rows.results);
+});
+
+app.get("/categories", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, color, sort_order AS sortOrder, free_text AS freeText, active FROM categories WHERE active = 1 ORDER BY sort_order, id"
+  ).all();
+  return c.json(
+    rows.results.map((r) => ({ ...r, freeText: !!r.freeText, active: !!r.active }))
+  );
+});
+
+app.get("/settings", async (c) => {
+  const rows = await c.env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
+  const map = Object.fromEntries(rows.results.map((r) => [r.key, r.value]));
+  return c.json({ clubName: map.clubName ?? "Jugendclub", logo: map.logo ?? null });
+});
+
+// ---------- Login & Konto ----------
+
+app.post("/auth/login", async (c) => {
+  const { memberId, pin, remember } = await c.req.json<{
+    memberId?: number;
+    pin?: string;
+    remember?: boolean;
+  }>();
+  if (!memberId || !pin) return err(c, 400, "Mitglied und PIN erforderlich");
+
+  const result = await checkPin(c.env.DB, memberId, pin);
+  if ("error" in result) return err(c, result.locked ? 423 : 401, result.error);
+
+  const ttl = remember ? TOKEN_TTL_LONG : TOKEN_TTL_SHORT;
+  const token = await signToken(
+    { sub: result.member.id, role: result.member.role, exp: Date.now() + ttl },
+    c.env.AUTH_SECRET
+  );
+  return c.json({ token, member: publicMember(result.member) });
+});
+
+app.get("/auth/me", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ? AND active = 1")
+    .bind(auth.sub)
+    .first<MemberRow>();
+  if (!member) return err(c, 401, "Konto nicht mehr aktiv");
+  return c.json({ member: publicMember(member) });
+});
+
+app.post("/auth/pin", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const { currentPin, newPin } = await c.req.json<{ currentPin?: string; newPin?: string }>();
+  if (!currentPin || !newPin || !/^\d{4}$/.test(newPin)) {
+    return err(c, 400, "Neue PIN muss 4 Ziffern haben");
+  }
+  const result = await checkPin(c.env.DB, auth.sub, currentPin);
+  if ("error" in result) return err(c, result.locked ? 423 : 401, result.error);
+
+  const salt = randomHex(16);
+  const hash = await hashPin(newPin, salt);
+  await c.env.DB.prepare("UPDATE members SET pin_hash = ?, pin_salt = ? WHERE id = ?")
+    .bind(hash, salt, auth.sub)
+    .run();
+  return c.json({ ok: true });
+});
+
+// ---------- Buchungen (Mitglieder-App) ----------
+
+async function insertDrink(
+  db: D1Database,
+  data: {
+    memberId: number;
+    categoryId: number;
+    note: string | null;
+    source: "mitglied" | "tresen" | "admin";
+    clientId: string | null;
+    undoToken: string | null;
+    createdAt: number;
+  }
+): Promise<{ id: number; duplicate: boolean } | { invalid: string }> {
+  const category = await db
+    .prepare("SELECT id, free_text FROM categories WHERE id = ? AND active = 1")
+    .bind(data.categoryId)
+    .first<{ id: number; free_text: number }>();
+  if (!category) return { invalid: "Kategorie nicht gefunden" };
+
+  if (data.clientId) {
+    const existing = await db
+      .prepare("SELECT id FROM drinks WHERE client_id = ?")
+      .bind(data.clientId)
+      .first<{ id: number }>();
+    if (existing) return { id: existing.id, duplicate: true };
+  }
+
+  const result = await db
+    .prepare(
+      "INSERT INTO drinks (member_id, category_id, note, source, client_id, undo_token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(
+      data.memberId,
+      data.categoryId,
+      data.note,
+      data.source,
+      data.clientId,
+      data.undoToken,
+      data.createdAt
+    )
+    .run();
+  return { id: result.meta.last_row_id as number, duplicate: false };
+}
+
+app.post("/drinks", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const body = await c.req.json<{
+    categoryId?: number;
+    note?: string;
+    clientId?: string;
+    createdAt?: number;
+  }>();
+  if (!body.categoryId) return err(c, 400, "Kategorie erforderlich");
+
+  // createdAt kommt vom Client, damit offline gepufferte Buchungen den
+  // tatsaechlichen Zeitpunkt behalten (begrenzt auf max. 7 Tage rueckwirkend).
+  const now = Date.now();
+  let createdAt = typeof body.createdAt === "number" ? body.createdAt : now;
+  if (createdAt > now || createdAt < now - 7 * 24 * 60 * 60_000) createdAt = now;
+
+  const result = await insertDrink(c.env.DB, {
+    memberId: auth.sub,
+    categoryId: body.categoryId,
+    note: body.note?.trim() || null,
+    source: "mitglied",
+    clientId: body.clientId ?? null,
+    undoToken: null,
+    createdAt,
+  });
+  if ("invalid" in result) return err(c, 400, result.invalid);
+  return c.json({ id: result.id, duplicate: result.duplicate });
+});
+
+app.delete("/drinks/:id", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const drink = await c.env.DB.prepare(
+    "SELECT id, member_id, created_at FROM drinks WHERE id = ? AND deleted_at IS NULL"
+  )
+    .bind(id)
+    .first<{ id: number; member_id: number; created_at: number }>();
+  if (!drink || drink.member_id !== auth.sub) return err(c, 404, "Buchung nicht gefunden");
+  if (Date.now() - drink.created_at > UNDO_WINDOW_MS) {
+    return err(c, 403, "Undo nur innerhalb von 60 Sekunden möglich");
+  }
+  await c.env.DB.prepare("UPDATE drinks SET deleted_at = ?, deleted_by = ? WHERE id = ?")
+    .bind(Date.now(), auth.sub, id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.get("/me/summary", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const now = Date.now();
+
+  // Tagesbeginn/Monatsbeginn in Berlin-Zeit bestimmen
+  const today = berlinDate(now);
+  const monthStartDate = today.slice(0, 8) + "01";
+
+  const rows = await c.env.DB.prepare(
+    `${DRINK_SELECT} AND d.member_id = ? AND d.created_at >= ? ORDER BY d.created_at DESC`
+  )
+    .bind(auth.sub, now - 35 * 24 * 60 * 60_000)
+    .all();
+
+  const drinks = rows.results as unknown as { createdAt: number; categoryId: number }[];
+  const todayDrinks = drinks.filter((d) => berlinDate(d.createdAt) === today);
+  const monthCountsMap = new Map<number, number>();
+  for (const d of drinks) {
+    if (berlinDate(d.createdAt) >= monthStartDate) {
+      monthCountsMap.set(d.categoryId, (monthCountsMap.get(d.categoryId) ?? 0) + 1);
+    }
+  }
+  return c.json({
+    today: todayDrinks,
+    monthCounts: [...monthCountsMap.entries()].map(([categoryId, count]) => ({ categoryId, count })),
+  });
+});
+
+app.get("/me/history", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const rows = await c.env.DB.prepare(
+    `${DRINK_SELECT} AND d.member_id = ? ORDER BY d.created_at DESC LIMIT 300`
+  )
+    .bind(auth.sub)
+    .all();
+  return c.json(rows.results);
+});
+
+// ---------- Tresenmodus ----------
+
+app.post("/tresen/book", async (c) => {
+  const { memberId, pin, categoryId, note } = await c.req.json<{
+    memberId?: number;
+    pin?: string;
+    categoryId?: number;
+    note?: string;
+  }>();
+  if (!memberId || !pin || !categoryId) return err(c, 400, "Unvollständige Anfrage");
+
+  const result = await checkPin(c.env.DB, memberId, pin);
+  if ("error" in result) return err(c, result.locked ? 423 : 401, result.error);
+
+  const undoToken = randomHex(16);
+  const inserted = await insertDrink(c.env.DB, {
+    memberId,
+    categoryId,
+    note: note?.trim() || null,
+    source: "tresen",
+    clientId: null,
+    undoToken,
+    createdAt: Date.now(),
+  });
+  if ("invalid" in inserted) return err(c, 400, inserted.invalid);
+  return c.json({ drinkId: inserted.id, undoToken });
+});
+
+// Undo am Tresen: braucht das Undo-Token aus der Buchungsantwort (kennt nur
+// das Tablet der laufenden Sitzung) — keine erneute PIN-Eingabe noetig.
+app.post("/tresen/undo", async (c) => {
+  const { drinkId, undoToken } = await c.req.json<{ drinkId?: number; undoToken?: string }>();
+  if (!drinkId || !undoToken) return err(c, 400, "Unvollständige Anfrage");
+  const drink = await c.env.DB.prepare(
+    "SELECT id, member_id, created_at, undo_token FROM drinks WHERE id = ? AND deleted_at IS NULL"
+  )
+    .bind(drinkId)
+    .first<{ id: number; member_id: number; created_at: number; undo_token: string | null }>();
+  if (!drink || drink.undo_token !== undoToken) return err(c, 404, "Buchung nicht gefunden");
+  if (Date.now() - drink.created_at > UNDO_WINDOW_MS) {
+    return err(c, 403, "Undo nur innerhalb von 60 Sekunden möglich");
+  }
+  await c.env.DB.prepare("UPDATE drinks SET deleted_at = ?, deleted_by = ? WHERE id = ?")
+    .bind(Date.now(), drink.member_id, drinkId)
+    .run();
+  return c.json({ ok: true });
+});
+
+// ---------- Admin: Mitglieder ----------
+
+app.get("/admin/members", requireAdmin, async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, color, role, active, created_at AS createdAt FROM members ORDER BY active DESC, name COLLATE NOCASE"
+  ).all();
+  return c.json(rows.results.map((r) => ({ ...r, active: !!r.active })));
+});
+
+app.post("/admin/members", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const { name, pin, role, color } = await c.req.json<{
+    name?: string;
+    pin?: string;
+    role?: string;
+    color?: string;
+  }>();
+  if (!name?.trim() || !pin || !/^\d{4}$/.test(pin)) {
+    return err(c, 400, "Name und 4-stellige PIN erforderlich");
+  }
+  const memberRole = role === "vorstand" ? "vorstand" : "mitglied";
+  const salt = randomHex(16);
+  const hash = await hashPin(pin, salt);
+  const result = await c.env.DB.prepare(
+    "INSERT INTO members (name, pin_hash, pin_salt, role, color, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(name.trim(), hash, salt, memberRole, color || "#f5a524", Date.now())
+    .run();
+  await audit(c.env.DB, auth.sub, "mitglied_angelegt", { name: name.trim(), role: memberRole });
+  return c.json({ id: result.meta.last_row_id });
+});
+
+app.patch("/admin/members/:id", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const body = await c.req.json<{
+    name?: string;
+    role?: string;
+    active?: boolean;
+    color?: string;
+    pin?: string;
+  }>();
+  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ?")
+    .bind(id)
+    .first<MemberRow>();
+  if (!member) return err(c, 404, "Mitglied nicht gefunden");
+
+  // Sich selbst nicht aussperren
+  if (id === auth.sub && (body.active === false || (body.role && body.role !== "vorstand"))) {
+    return err(c, 400, "Du kannst dein eigenes Vorstandskonto nicht deaktivieren");
+  }
+
+  const changes: string[] = [];
+  const name = body.name?.trim() || member.name;
+  const role = body.role === "vorstand" || body.role === "mitglied" ? body.role : member.role;
+  const active = typeof body.active === "boolean" ? (body.active ? 1 : 0) : member.active;
+  const color = body.color || member.color;
+  if (name !== member.name) changes.push(`Name: ${member.name} → ${name}`);
+  if (role !== member.role) changes.push(`Rolle: ${role}`);
+  if (active !== member.active) changes.push(active ? "aktiviert" : "deaktiviert");
+
+  let pinHash = member.pin_hash;
+  let pinSalt = member.pin_salt;
+  if (body.pin) {
+    if (!/^\d{4}$/.test(body.pin)) return err(c, 400, "PIN muss 4 Ziffern haben");
+    pinSalt = randomHex(16);
+    pinHash = await hashPin(body.pin, pinSalt);
+    changes.push("PIN zurückgesetzt");
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE members SET name = ?, role = ?, active = ?, color = ?, pin_hash = ?, pin_salt = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?"
+  )
+    .bind(name, role, active, color, pinHash, pinSalt, id)
+    .run();
+  if (changes.length) {
+    await audit(c.env.DB, auth.sub, "mitglied_geaendert", { memberId: id, name, changes });
+  }
+  return c.json({ ok: true });
+});
+
+// ---------- Admin: Kategorien ----------
+
+app.get("/admin/categories", requireAdmin, async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, color, sort_order AS sortOrder, free_text AS freeText, active FROM categories ORDER BY sort_order, id"
+  ).all();
+  return c.json(rows.results.map((r) => ({ ...r, freeText: !!r.freeText, active: !!r.active })));
+});
+
+app.post("/admin/categories", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const { name, color, sortOrder, freeText } = await c.req.json<{
+    name?: string;
+    color?: string;
+    sortOrder?: number;
+    freeText?: boolean;
+  }>();
+  if (!name?.trim()) return err(c, 400, "Name erforderlich");
+  const result = await c.env.DB.prepare(
+    "INSERT INTO categories (name, color, sort_order, free_text) VALUES (?, ?, ?, ?)"
+  )
+    .bind(name.trim(), color || "#f5a524", sortOrder ?? 99, freeText ? 1 : 0)
+    .run();
+  await audit(c.env.DB, auth.sub, "kategorie_angelegt", { name: name.trim() });
+  return c.json({ id: result.meta.last_row_id });
+});
+
+app.patch("/admin/categories/:id", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const body = await c.req.json<{
+    name?: string;
+    color?: string;
+    sortOrder?: number;
+    freeText?: boolean;
+    active?: boolean;
+  }>();
+  const cat = await c.env.DB.prepare("SELECT * FROM categories WHERE id = ?")
+    .bind(id)
+    .first<{ id: number; name: string; color: string; sort_order: number; free_text: number; active: number }>();
+  if (!cat) return err(c, 404, "Kategorie nicht gefunden");
+
+  await c.env.DB.prepare(
+    "UPDATE categories SET name = ?, color = ?, sort_order = ?, free_text = ?, active = ? WHERE id = ?"
+  )
+    .bind(
+      body.name?.trim() || cat.name,
+      body.color || cat.color,
+      typeof body.sortOrder === "number" ? body.sortOrder : cat.sort_order,
+      typeof body.freeText === "boolean" ? (body.freeText ? 1 : 0) : cat.free_text,
+      typeof body.active === "boolean" ? (body.active ? 1 : 0) : cat.active,
+      id
+    )
+    .run();
+  await audit(c.env.DB, auth.sub, "kategorie_geaendert", { categoryId: id, ...body });
+  return c.json({ ok: true });
+});
+
+// ---------- Admin: Strichliste, Korrekturen, Stats ----------
+
+app.get("/admin/overview", requireAdmin, async (c) => {
+  const { from, to } = parseRange(c);
+  const counts = await c.env.DB.prepare(
+    `SELECT member_id AS memberId, category_id AS categoryId, COUNT(*) AS n
+     FROM drinks WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?
+     GROUP BY member_id, category_id`
+  )
+    .bind(from, to)
+    .all<{ memberId: number; categoryId: number; n: number }>();
+  const members = await c.env.DB.prepare(
+    "SELECT id, name, active FROM members ORDER BY name COLLATE NOCASE"
+  ).all<{ id: number; name: string; active: number }>();
+
+  const byMember = new Map<number, Record<number, number>>();
+  for (const row of counts.results) {
+    const rec = byMember.get(row.memberId) ?? {};
+    rec[row.categoryId] = row.n;
+    byMember.set(row.memberId, rec);
+  }
+  const rows = members.results
+    .map((m) => {
+      const rec = byMember.get(m.id) ?? {};
+      const total = Object.values(rec).reduce((a, b) => a + b, 0);
+      return { memberId: m.id, memberName: m.name, active: !!m.active, counts: rec, total };
+    })
+    .filter((r) => r.total > 0 || r.active);
+  return c.json(rows);
+});
+
+app.get("/admin/members/:id/drinks", requireAdmin, async (c) => {
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const { from, to } = parseRange(c);
+  const rows = await c.env.DB.prepare(
+    `${DRINK_SELECT} AND d.member_id = ? AND d.created_at >= ? AND d.created_at < ? ORDER BY d.created_at DESC LIMIT 500`
+  )
+    .bind(id, from, to)
+    .all();
+  return c.json(rows.results);
+});
+
+app.post("/admin/drinks", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const { memberId, categoryId, note, createdAt } = await c.req.json<{
+    memberId?: number;
+    categoryId?: number;
+    note?: string;
+    createdAt?: number;
+  }>();
+  if (!memberId || !categoryId) return err(c, 400, "Mitglied und Kategorie erforderlich");
+  const result = await insertDrink(c.env.DB, {
+    memberId,
+    categoryId,
+    note: note?.trim() || null,
+    source: "admin",
+    clientId: null,
+    undoToken: null,
+    createdAt: typeof createdAt === "number" ? createdAt : Date.now(),
+  });
+  if ("invalid" in result) return err(c, 400, result.invalid);
+  await audit(c.env.DB, auth.sub, "strich_nachgetragen", { memberId, categoryId, drinkId: result.id });
+  return c.json({ id: result.id });
+});
+
+app.delete("/admin/drinks/:id", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const drink = await c.env.DB.prepare(
+    "SELECT id, member_id, category_id, created_at FROM drinks WHERE id = ? AND deleted_at IS NULL"
+  )
+    .bind(id)
+    .first<{ id: number; member_id: number; category_id: number; created_at: number }>();
+  if (!drink) return err(c, 404, "Buchung nicht gefunden");
+  await c.env.DB.prepare("UPDATE drinks SET deleted_at = ?, deleted_by = ? WHERE id = ?")
+    .bind(Date.now(), auth.sub, id)
+    .run();
+  await audit(c.env.DB, auth.sub, "strich_geloescht", {
+    drinkId: id,
+    memberId: drink.member_id,
+    categoryId: drink.category_id,
+    originalZeit: berlinDate(drink.created_at) + " " + berlinTime(drink.created_at),
+  });
+  return c.json({ ok: true });
+});
+
+// Stornierung rueckgaengig machen: Soft-Delete aufheben (Audit-Eintrag inklusive)
+app.post("/admin/drinks/:id/restore", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  const drink = await c.env.DB.prepare(
+    "SELECT id, member_id, category_id, created_at FROM drinks WHERE id = ? AND deleted_at IS NOT NULL"
+  )
+    .bind(id)
+    .first<{ id: number; member_id: number; category_id: number; created_at: number }>();
+  if (!drink) return err(c, 404, "Keine stornierte Buchung mit dieser ID gefunden");
+  await c.env.DB.prepare("UPDATE drinks SET deleted_at = NULL, deleted_by = NULL WHERE id = ?")
+    .bind(id)
+    .run();
+  await audit(c.env.DB, auth.sub, "strich_wiederhergestellt", {
+    drinkId: id,
+    memberId: drink.member_id,
+    categoryId: drink.category_id,
+    originalZeit: berlinDate(drink.created_at) + " " + berlinTime(drink.created_at),
+  });
+  return c.json({ ok: true });
+});
+
+app.get("/admin/stats", requireAdmin, async (c) => {
+  const { from, to } = parseRange(c);
+  const rows = await c.env.DB.prepare(
+    `SELECT d.member_id AS memberId, m.name AS memberName, d.category_id AS categoryId, d.created_at AS createdAt
+     FROM drinks d JOIN members m ON m.id = d.member_id
+     WHERE d.deleted_at IS NULL AND d.created_at >= ? AND d.created_at < ?`
+  )
+    .bind(from, to)
+    .all<{ memberId: number; memberName: string; categoryId: number; createdAt: number }>();
+
+  const perDayMap = new Map<string, Record<number, number>>();
+  const topMap = new Map<number, { memberName: string; count: number }>();
+  const heatmap: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+
+  for (const r of rows.results) {
+    const date = berlinDate(r.createdAt);
+    const day = perDayMap.get(date) ?? {};
+    day[r.categoryId] = (day[r.categoryId] ?? 0) + 1;
+    perDayMap.set(date, day);
+
+    const top = topMap.get(r.memberId) ?? { memberName: r.memberName, count: 0 };
+    top.count++;
+    topMap.set(r.memberId, top);
+
+    heatmap[berlinWeekday(r.createdAt)][berlinHour(r.createdAt)]++;
+  }
+
+  return c.json({
+    perDay: [...perDayMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, counts]) => ({ date, counts })),
+    topDrinkers: [...topMap.entries()]
+      .map(([memberId, v]) => ({ memberId, memberName: v.memberName, count: v.count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15),
+    heatmap,
+    total: rows.results.length,
+  });
+});
+
+// Getraenke-Log: JEDE Buchung inkl. stornierter (Soft-Delete) — lueckenlos nachvollziehbar
+app.get("/admin/log", requireAdmin, async (c) => {
+  const { from, to } = parseRange(c);
+  const rows = await c.env.DB.prepare(
+    `SELECT d.id, d.member_id AS memberId, m.name AS memberName,
+            d.category_id AS categoryId, cat.name AS categoryName, cat.color AS categoryColor,
+            d.note, d.source, d.created_at AS createdAt,
+            d.deleted_at AS deletedAt, del.name AS deletedByName
+     FROM drinks d
+     JOIN members m ON m.id = d.member_id
+     JOIN categories cat ON cat.id = d.category_id
+     LEFT JOIN members del ON del.id = d.deleted_by
+     WHERE d.created_at >= ? AND d.created_at < ?
+     ORDER BY d.created_at DESC LIMIT 1000`
+  )
+    .bind(from, to)
+    .all();
+  return c.json(rows.results);
+});
+
+// ---------- Admin: Audit & Export ----------
+
+app.get("/admin/audit", requireAdmin, async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT a.id, a.actor_id AS actorId, m.name AS actorName, a.action, a.details, a.created_at AS createdAt
+     FROM audit_log a LEFT JOIN members m ON m.id = a.actor_id
+     ORDER BY a.created_at DESC LIMIT 300`
+  ).all();
+  return c.json(rows.results);
+});
+
+app.get("/admin/export.csv", requireAdmin, async (c) => {
+  const { from, to } = parseRange(c);
+  const rows = await c.env.DB.prepare(
+    `${DRINK_SELECT} AND d.created_at >= ? AND d.created_at < ? ORDER BY d.created_at`
+  )
+    .bind(from, to)
+    .all<{ memberName: string; categoryName: string; note: string | null; source: string; createdAt: number }>();
+
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const lines = ["Datum;Uhrzeit;Mitglied;Kategorie;Notiz;Quelle"];
+  for (const r of rows.results) {
+    lines.push(
+      [
+        berlinDate(r.createdAt),
+        berlinTime(r.createdAt),
+        esc(r.memberName),
+        esc(r.categoryName),
+        esc(r.note ?? ""),
+        r.source,
+      ].join(";")
+    );
+  }
+  return new Response("﻿" + lines.join("\r\n"), {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="strichliste_${berlinDate(from)}_${berlinDate(to)}.csv"`,
+    },
+  });
+});
+
+// ---------- Admin: Einstellungen (Logo, Clubname) ----------
+
+app.put("/admin/settings", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const { clubName, logo } = await c.req.json<{ clubName?: string; logo?: string | null }>();
+  if (typeof logo === "string" && logo.length > 400_000) {
+    return err(c, 400, "Logo zu groß (max. ~300 KB)");
+  }
+  const upsert = c.env.DB.prepare(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  );
+  const batch: D1PreparedStatement[] = [];
+  if (typeof clubName === "string" && clubName.trim()) batch.push(upsert.bind("clubName", clubName.trim()));
+  if (typeof logo === "string") batch.push(upsert.bind("logo", logo));
+  if (logo === null) batch.push(c.env.DB.prepare("DELETE FROM settings WHERE key = 'logo'"));
+  if (batch.length) await c.env.DB.batch(batch);
+  await audit(c.env.DB, auth.sub, "einstellungen_geaendert", { clubName, logoGeaendert: logo !== undefined });
+  return c.json({ ok: true });
+});
+
+app.notFound((c) => c.json({ error: "Nicht gefunden" }, 404));
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/")) {
+      return app.fetch(request, env, ctx);
+    }
+    // Alles andere (SPA-Routen, Assets) wird vom Asset-Handling beantwortet;
+    // not_found_handling=single-page-application liefert dabei die index.html.
+    return env.ASSETS.fetch(request);
+  },
+};

@@ -1,0 +1,23 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "getraenke-club",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-06-01",
+	"assets": {
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "getraenke-club",
+			"database_id": "a04af21a-eee9-4c0a-bc2b-86b8ee377ec5",
+			"migrations_dir": "migrations"
+		}
+	],
+	// AUTH_SECRET kommt in Produktion aus `wrangler secret put AUTH_SECRET`,
+	// lokal aus .dev.vars — NIE als var hier eintragen (ueberschreibt das Secret!)
+	"observability": {
+		"enabled": true
+	}
+}

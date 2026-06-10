@@ -1,16 +1,7 @@
 node_modules/
-.next/
-out/
-.env
-.env.local
+dist/
+.wrangler/
+.dev.vars
 *.log
 .DS_Store
-
-# SQLite local DB
-prisma/dev.db
-prisma/dev.db-journal
-data/
-backups/
-
-# Tooling state
 .claude/

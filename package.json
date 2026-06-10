@@ -1,40 +1,35 @@
 {
-  "name": "getaenke-club",
-  "version": "0.1.0",
+  "name": "getraenke-club",
   "private": true,
+  "version": "1.0.0",
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && next build && bash scripts/postbuild.sh",
-    "start": "next start",
-    "lint": "next lint",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "prisma db seed",
-    "prisma:studio": "prisma studio"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply getraenke-club --local",
+    "db:migrate:remote": "wrangler d1 migrations apply getraenke-club --remote",
+    "deploy": "vite build && wrangler deploy -c dist/getraenke_club/wrangler.json"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "bcryptjs": "^2.4.3",
-    "clsx": "^2.1.1",
-    "iron-session": "^8.0.4",
-    "next": "^15.0.3",
-    "react": "^19.0.0-rc-66855b96-20241106",
-    "react-dom": "^19.0.0-rc-66855b96-20241106",
-    "zod": "^3.23.8"
+    "hono": "^4.6.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0",
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^22.9.0",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "prisma": "^5.22.0",
-    "tailwindcss": "^3.4.14",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "@cloudflare/vite-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^4.20250303.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.2.0",
+    "vite-plugin-pwa": "^0.21.0",
+    "wrangler": "^4.0.0"
   }
 }

@@ -1,174 +1,63 @@
-<div align="center">
-  <img src="assets/icon-256.png" alt="Getränke-Club Logo" width="160" />
-  <h1>Getränke-Club Strichliste</h1>
-</div>
+# Getränke-Club 🍻
 
-Digitale Strichliste für den Jugendclub – Ablösung der Papierliste.
-Mitglieder buchen ihre Getränke per Smartphone oder gemeinsam über ein
-Tablet am Tresen, der Vorstand sieht alles im Browser.
+Digitale Getränke-Strichliste für den Jugendclub. PWA (React + Vite) mit Hono-API
+auf Cloudflare Workers, Daten in Cloudflare D1.
 
-## Was die App kann
+## Features
 
-- **Mitglieder-Ansicht** – PIN-Login, ein Tap pro Getränk, eigene
-  Tagesübersicht, 60 s-Undo, eigene PIN ändern.
-- **Tresenmodus** – läuft am Tablet ohne Account: Mitglied antippen,
-  PIN, Kategorie. Nach 15 s Inaktivität setzt sich alles zurück.
-- **Admin-Panel** – Mitglieder anlegen / löschen, Kategorien pflegen,
-  Strichliste mit CSV-Export, Logo hochladen, 30-Tage-Trend.
-- **Offline-tauglich (PWA)** – Buchungen werden lokal gepuffert, wenn
-  das WLAN aussetzt, und automatisch nachgereicht.
+- **Mitglieder-App** (mobil, Dark Mode): PIN-Login, 1 Tap = +1 Strich, 60-Sekunden-Undo,
+  Tagesübersicht, Monatsstand mit echten Strichlisten-Strichen, Verlauf, eigene PIN ändern.
+- **Tresenmodus** (`/tresen`): Kiosk fürs Tablet ohne Account. Mitglied antippen → PIN →
+  Kategorie → Bestätigung mit Undo. Nach 15 s Inaktivität automatischer Reset.
+- **Admin-Panel** (`/admin`, nur Rolle „Vorstand"): Strichlisten-Matrix mit Zeitraumfilter
+  und Drilldown, manuelle Korrekturen (mit Audit-Log), Statistiken (30-Tage-Trend,
+  Top-Trinker, Wochentag×Stunde-Heatmap), Mitglieder- und Kategorienverwaltung,
+  CSV-Export, Logo-Upload.
+- **Offline-tauglich**: Buchungen in der Mitglieder-App werden bei Funkloch lokal
+  gepuffert und automatisch idempotent nachgereicht (der Tresen braucht Netz, weil
+  die PIN serverseitig geprüft wird).
 
-## URLs
+## Entwicklung
 
-| Pfad                | Wofür                                            |
-| ------------------- | ------------------------------------------------ |
-| `/login`            | PIN-Login + Link in den Tresenmodus              |
-| `/member`           | Mitglieder-UI                                    |
-| `/kiosk`            | Tresenmodus für Tablet                           |
-| `/admin`            | Übersicht                                        |
-| `/admin/users`      | Mitglieder verwalten                             |
-| `/admin/categories` | Getränke-Kategorien anpassen                     |
-| `/admin/tallies`    | Komplette Strichliste + CSV-Export               |
-| `/admin/branding`   | Eigenes Logo hochladen                           |
-
-## Installation auf dem Raspberry Pi (Schritt für Schritt)
-
-Vorausgesetzt: Raspberry Pi 4 mit Pi OS Bookworm (64-bit), Pi-User
-heißt `pi`, Cloudflare-Account mit eigener Domain.
+Voraussetzung: Node.js ≥ 22.
 
 ```bash
-# 1) Node 20 + SQLite installieren
-sudo apt update
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs sqlite3 git
-
-# 2) App auschecken
-sudo mkdir -p /opt/drinks/data /opt/drinks/backups
-sudo chown -R pi:pi /opt/drinks
-git clone https://github.com/tgru-dev/getraenke-club.git /opt/drinks/app
-cd /opt/drinks/app
-npm ci
-
-# 3) .env mit Zufalls-Secret anlegen
-SECRET=$(openssl rand -hex 32)
-cat > .env <<EOF
-DATABASE_URL="file:/opt/drinks/data/drinks.db"
-SESSION_SECRET="${SECRET}"
-NODE_ENV="production"
-EOF
-chmod 600 .env
-
-# 4) DB anlegen, Standard-Daten seeden, App bauen
-npx prisma migrate deploy
-npm run prisma:seed     # Admin / PIN 0000 + Standard-Kategorien
-npm run build
-```
-
-App-Service einrichten – Datei `/etc/systemd/system/drinks.service`:
-
-```ini
-[Unit]
-Description=Getraenke Strichliste
-After=network.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/opt/drinks/app
-EnvironmentFile=/opt/drinks/app/.env
-ExecStart=/usr/bin/node /opt/drinks/app/.next/standalone/server.js
-Environment=HOSTNAME=127.0.0.1
-Environment=PORT=3000
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now drinks
-```
-
-Cloudflare Tunnel installieren und mit dem lokalen Port 3000 verbinden:
-
-```bash
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb -o /tmp/cf.deb
-sudo dpkg -i /tmp/cf.deb
-cloudflared tunnel login        # öffnet Browser-Link
-cloudflared tunnel create drinks
-```
-
-`~/.cloudflared/config.yml`:
-
-```yaml
-tunnel: <id-aus-create>
-credentials-file: /home/pi/.cloudflared/<id-aus-create>.json
-ingress:
-  - hostname: drinks.example.de
-    service: http://localhost:3000
-  - service: http_status:404
-```
-
-```bash
-cloudflared tunnel route dns drinks drinks.example.de
-sudo cloudflared service install
-sudo systemctl enable --now cloudflared
-```
-
-Fertig – die App ist unter `https://drinks.example.de` erreichbar,
-HTTPS macht Cloudflare automatisch.
-
-## Erste Schritte
-
-1. `https://drinks.example.de/login` aufrufen.
-2. Als **Admin** mit PIN `0000` einloggen.
-3. Im Header **Admin → PIN ändern** → eigene PIN setzen.
-4. Unter **Mitglieder** Konten anlegen (Name + 4-stellige Start-PIN).
-   Mitglieder ändern ihre PIN selbst.
-5. Optional: Unter **Kategorien** eigene Getränke ergänzen, unter
-   **Logo** das Vereins-Logo hochladen.
-
-## Updates einspielen
-
-```bash
-cd /opt/drinks/app
-git pull
-npm ci
-npx prisma migrate deploy
-npm run prisma:seed
-npm run build
-sudo systemctl restart drinks
-```
-
-## Backup
-
-Tägliches Backup der DB per Cron – `/etc/cron.d/drinks-backup`:
-
-```cron
-15 4 * * * pi sqlite3 /opt/drinks/data/drinks.db ".backup '/opt/drinks/backups/drinks-$(date +\%F).db'" && find /opt/drinks/backups -name 'drinks-*.db' -mtime +14 -delete
-```
-
-Logo, Konfig und Striche liegen alle in derselben Datei – ein Backup
-reicht.
-
-## Lokale Entwicklung
-
-```bash
-git clone https://codeberg.org/tg-macos/getraenke-club.git
-cd getraenke-club
-cp .env.example .env
-# SESSION_SECRET in .env mit Zufallswert füllen:
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 npm install
-npx prisma migrate dev --name init
-npm run prisma:seed
-npm run dev
+npm run db:migrate:local   # lokale D1-Datenbank anlegen
+npm run dev                # Vite-Dev-Server mit lokalem Worker + D1
 ```
 
-App läuft auf <http://localhost:3000>, Default-Login `Admin / 0000`.
+Beim ersten Start `/setup` öffnen (passiert automatisch) und das erste
+Vorstandskonto anlegen.
 
-## Stack
+## Deployment auf Cloudflare
 
-Next.js 15 · TypeScript · TailwindCSS · Prisma + SQLite · iron-session
-(PIN-Login mit bcrypt) · PWA + Service Worker.
+1. **D1-Datenbank anlegen** und die ausgegebene ID in `wrangler.jsonc` unter
+   `database_id` eintragen:
+   ```bash
+   npx wrangler d1 create getraenke-club
+   ```
+2. **Migrationen auf die echte Datenbank anwenden:**
+   ```bash
+   npm run db:migrate:remote
+   ```
+3. **Auth-Secret setzen** (ersetzt den Dev-Wert aus `wrangler.jsonc`):
+   ```bash
+   npx wrangler secret put AUTH_SECRET   # langen Zufallswert eingeben
+   ```
+4. **Deployen:**
+   ```bash
+   npm run deploy
+   ```
+
+Danach die Worker-URL öffnen → Ersteinrichtung durchlaufen → Mitglieder anlegen.
+Auf dem Tresen-Tablet `/tresen` öffnen und als Vollbild-App ("Zum Startbildschirm
+hinzufügen") einrichten.
+
+## Sicherheitsmodell
+
+Alle nutzen 4-stellige PINs (gehasht mit Salt gespeichert). Da der PIN-Raum klein
+ist, schützt serverseitiges Rate-Limiting: nach 5 Fehlversuchen wird das Konto für
+5 Minuten gesperrt. Admin-Aktionen (Korrekturen, Löschungen, PIN-Resets) landen im
+Audit-Log. Mitglieder werden deaktiviert statt gelöscht, damit historische Striche
+erhalten bleiben.
