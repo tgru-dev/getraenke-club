@@ -52,16 +52,19 @@ export function Profile() {
         </div>
       </header>
 
-      <Link
-        to="/wrapped"
-        className="animate-rise flex items-center justify-between rounded-3xl border border-amber/40 bg-amber/10 p-5"
-      >
-        <div>
-          <p className="font-display text-lg font-bold text-amber">🎉 Dein Jahresrückblick</p>
-          <p className="text-sm text-muted">Deine Striche, dein Getränk des Jahres, deine größten Abende</p>
-        </div>
-        <span className="text-2xl text-amber">→</span>
-      </Link>
+      {/* Wrapped ist eine Dezember-Ueberraschung — Rest des Jahres ausgeblendet */}
+      {new Date().getMonth() === 11 && (
+        <Link
+          to="/wrapped"
+          className="animate-rise flex items-center justify-between rounded-3xl border border-amber/40 bg-amber/10 p-5"
+        >
+          <div>
+            <p className="font-display text-lg font-bold text-amber">🎉 Dein Jahresrückblick</p>
+            <p className="text-sm text-muted">Deine Striche, dein Getränk des Jahres, deine größten Abende</p>
+          </div>
+          <span className="text-2xl text-amber">→</span>
+        </Link>
+      )}
 
       <section className="rounded-3xl border border-line bg-surface p-5 animate-rise">
         <h2 className="font-display font-bold">PIN ändern</h2>

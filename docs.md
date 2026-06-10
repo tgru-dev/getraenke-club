@@ -327,6 +327,9 @@ State-Machine in `Tresen.tsx`: `members → pin → categories → (note) → do
   als gestaffelte Karten (eigene Striche, Getränk des Jahres, aktive Tage,
   stärkster Tag, Lieblings-Wochentag, Nachteulen-Moment, Club-Gesamt). Jahr
   umschaltbar (aktuell/Vorjahr). Eigener Lazy-Chunk, eigener Leerzustand.
+  **Nur im Dezember sichtbar** (Nutzerwunsch, Überraschungseffekt): Profil-Link
+  erscheint nur bei `getMonth() === 11`, die Seite zeigt sonst einen 🎁-Teaser.
+  Reine Client-Gating-Logik — der API-Endpoint bleibt ganzjährig nutzbar.
 - **Kategorien**: Inline-Edit (Name onBlur, Farbe color-input, Textfeld-Checkbox,
   ▲▼ tauscht sort_order beider Nachbarn), Anlegen, aktivieren/deaktivieren.
 - **Einstellungen**: Clubname, Logo (FileReader → Data-URL, max 300 KB, PNG/JPG/SVG/WebP).

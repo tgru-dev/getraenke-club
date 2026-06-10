@@ -17,13 +17,32 @@ function formatDate(iso: string): string {
 export function Wrapped() {
   const { member } = useAuth();
   const currentYear = new Date().getFullYear();
+  const isDecember = new Date().getMonth() === 11;
   const [year, setYear] = useState(currentYear);
   const [data, setData] = useState<WrappedData | null>(null);
 
   useEffect(() => {
+    if (!isDecember) return;
     setData(null);
     api<WrappedData>(`/me/wrapped?year=${year}`).then(setData).catch(() => {});
-  }, [year]);
+  }, [year, isDecember]);
+
+  // Dezember-Ueberraschung: vorher gibt's nur einen Teaser
+  if (!isDecember) {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-6xl animate-pop">🎁</p>
+        <h1 className="font-display text-3xl font-extrabold">Noch nicht!</h1>
+        <p className="text-muted">
+          Dein Jahresrückblick wird im <strong className="text-amber">Dezember</strong> freigeschaltet.
+          Bis dahin: fleißig Striche sammeln. 🍻
+        </p>
+        <Link to="/" className="mt-4 rounded-xl border border-line px-5 py-2.5 text-muted">
+          ← zurück zur App
+        </Link>
+      </div>
+    );
+  }
 
   const firstName = member?.name.split(" ")[0] ?? "";
   const top = data?.perCategory[0];
