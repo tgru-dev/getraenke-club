@@ -28,6 +28,23 @@ export function Mitglieder() {
     }
   };
 
+  const finalDelete = async (m: AdminMember) => {
+    if (
+      !confirm(
+        `"${m.name}" endgültig löschen?\n\nDas Konto verschwindet überall (Login, Tresen, Verwaltung). ` +
+          `Die Buchungen bleiben im Getränke-Log und in der Abrechnung erhalten.\n\nDas kann nicht rückgängig gemacht werden.`
+      )
+    )
+      return;
+    setError(null);
+    try {
+      await api(`/admin/members/${m.id}`, { method: "DELETE" });
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen");
+    }
+  };
+
   const resetPin = (m: AdminMember) => {
     const pin = prompt(`Neue 4-stellige PIN für ${m.name}:`);
     if (pin === null) return;
@@ -149,6 +166,15 @@ export function Mitglieder() {
                     >
                       {m.active ? "deaktivieren" : "aktivieren"}
                     </button>
+                    {!m.active && (
+                      <button
+                        onClick={() => void finalDelete(m)}
+                        title="Endgültig löschen – Buchungen bleiben im Getränke-Log"
+                        className="font-medium text-danger hover:underline"
+                      >
+                        🗑 löschen
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -157,7 +183,8 @@ export function Mitglieder() {
         </table>
       </div>
       <p className="text-sm text-muted">
-        Mitglieder werden deaktiviert statt gelöscht, damit ihre historischen Striche erhalten bleiben.
+        Erst deaktivieren, dann optional endgültig löschen. Auch beim endgültigen Löschen bleiben
+        alle Buchungen im Getränke-Log und in der Abrechnung nachvollziehbar.
       </p>
     </div>
   );

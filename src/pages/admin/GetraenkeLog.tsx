@@ -111,6 +111,9 @@ export function GetraenkeLog() {
                 <td className="whitespace-nowrap px-4 py-2.5 font-mono">{formatDateTime(e.createdAt)}</td>
                 <td className={`px-4 py-2.5 font-medium ${e.deletedAt ? "line-through" : ""}`}>
                   {e.memberName}
+                  {e.memberDeleted && (
+                    <span className="ml-1.5 text-xs text-muted no-underline">(gelöscht)</span>
+                  )}
                 </td>
                 <td className={`px-4 py-2.5 ${e.deletedAt ? "line-through" : ""}`}>
                   <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: e.categoryColor }} />

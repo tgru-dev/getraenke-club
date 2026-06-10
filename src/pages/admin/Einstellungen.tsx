@@ -7,6 +7,7 @@ const MAX_LOGO_BYTES = 300 * 1024;
 export function Einstellungen() {
   const [settings, setSettings] = useState<ClubSettings | null>(null);
   const [clubName, setClubName] = useState("");
+  const [signupCode, setSignupCode] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
@@ -16,7 +17,7 @@ export function Einstellungen() {
     }).catch(() => {});
   }, []);
 
-  const save = async (body: { clubName?: string; logo?: string | null }) => {
+  const save = async (body: { clubName?: string; logo?: string | null; signupCode?: string | null }) => {
     setMessage(null);
     try {
       await api("/admin/settings", { method: "PUT", body });
@@ -82,6 +83,36 @@ export function Einstellungen() {
           {settings?.logo && (
             <button onClick={() => void save({ logo: null })} className="text-danger hover:underline">
               entfernen
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-line bg-surface p-5">
+        <h2 className="font-display font-bold">Club-Code für die Registrierung</h2>
+        <p className="mt-1 text-sm text-muted">
+          Wenn gesetzt, können sich unter /signup nur Leute registrieren, die den Code kennen.
+          {settings?.signupCodeRequired
+            ? " Aktuell ist ein Code aktiv."
+            : " Aktuell ist die Registrierung offen."}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <input
+            value={signupCode}
+            onChange={(e) => setSignupCode(e.target.value)}
+            placeholder={settings?.signupCodeRequired ? "Neuen Code setzen …" : "z. B. clubraum2026"}
+            className="flex-1 rounded-xl border border-line bg-raised px-4 py-2.5"
+          />
+          <button
+            onClick={() => { void save({ signupCode }); setSignupCode(""); }}
+            disabled={!signupCode.trim()}
+            className="rounded-xl bg-amber px-5 py-2.5 font-bold text-bg disabled:opacity-40"
+          >
+            Setzen
+          </button>
+          {settings?.signupCodeRequired && (
+            <button onClick={() => void save({ signupCode: null })} className="px-2 text-danger hover:underline">
+              Code entfernen
             </button>
           )}
         </div>

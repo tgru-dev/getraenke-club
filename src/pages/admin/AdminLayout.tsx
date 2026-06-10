@@ -5,6 +5,7 @@ import { Avatar } from "../../components/Avatar";
 const nav = [
   { to: "/admin", label: "Strichliste", end: true },
   { to: "/admin/log", label: "Getränke-Log" },
+  { to: "/admin/abrechnung", label: "Abrechnung" },
   { to: "/admin/stats", label: "Statistiken" },
   { to: "/admin/mitglieder", label: "Mitglieder" },
   { to: "/admin/kategorien", label: "Kategorien" },

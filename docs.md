@@ -95,6 +95,7 @@ Alle Zeitstempel: **Unix-Epoch in Millisekunden (INTEGER, UTC)**. Booleans: INTE
 | failed_attempts | INTEGER | Fehlversuchszähler fürs Rate-Limiting |
 | locked_until | INTEGER NULL | Epoch-ms; Konto gesperrt bis dahin |
 | created_at | INTEGER | |
+| deleted_at | INTEGER NULL | Migration 0002: **finales Löschen** als Tombstone. Gesetzt = Konto existiert nicht mehr (Login/Listen filtern `deleted_at IS NULL`), aber Buchungs-JOINs liefern weiter den Namen |
 
 ### categories
 | Spalte | Typ | Bedeutung |
@@ -103,6 +104,7 @@ Alle Zeitstempel: **Unix-Epoch in Millisekunden (INTEGER, UTC)**. Booleans: INTE
 | sort_order | INTEGER | Reihenfolge in allen Buchungs-UIs |
 | free_text | INTEGER | 1 = beim Buchen wird ein Freitext abgefragt (z. B. „Sonstiges") |
 | active | INTEGER | 0 = ausgeblendet, historische Striche bleiben |
+| price | INTEGER NULL | Migration 0002: Preis in **Cent** für die Abrechnung (NULL = ohne Preis). Nur in Admin-Antworten enthalten — Mitglieder sehen nie Beträge |
 
 Seed (Migration 0001): Bier/Spezi/Radler, Mische, Cola/Sprite/Fanta, Shot, Sonstiges (free_text=1).
 
@@ -129,7 +131,8 @@ Labels dafür: `ACTION_LABELS` in `src/pages/admin/Audit.tsx` — **bei neuen Ak
 
 ### settings
 Key-Value: `clubName` (TEXT), `logo` (Data-URL, Upload-Limit clientseitig 300 KB,
-serverseitig 400.000 Zeichen).
+serverseitig 400.000 Zeichen), `signupCode` (optionaler Club-Code für die
+Registrierung; `GET /settings` liefert nur das Flag `signupCodeRequired`, nie den Code).
 
 ### Zeitzonen-Konzept
 SQLite/D1 kennt keine Zeitzonen-Datenbank. Tag-/Stunden-Zuordnung (Heatmap,
@@ -156,7 +159,7 @@ Download-Links wie CSV nötig). Middleware: `requireAuth` (gültiges Token),
 |---|---|
 | `GET /setup/status` | `{needsSetup: boolean}` — true wenn 0 Mitglieder |
 | `POST /setup` `{name, pin}` | Legt erstes Vorstandskonto an (nur bei leerer members-Tabelle, sonst 409). Antwort: `{token, member}` |
-| `POST /signup` `{name, pin, color?}` | Selbst-Registrierung. Rolle ist **serverseitig fest `mitglied`**. Guards: erst nach Ersteinrichtung möglich (409), Name unique unter aktiven Mitgliedern case-insensitive (409), max. 40 Zeichen. Audit `mitglied_registriert`, Antwort wie Login (Auto-Login) |
+| `POST /signup` `{name, pin, color?, code?}` | Selbst-Registrierung. Rolle ist **serverseitig fest `mitglied`**. Guards: optionaler Club-Code (Settings-Key `signupCode`, Vergleich case-insensitive, 403 bei Fehler), erst nach Ersteinrichtung möglich (409), Name unique unter aktiven Mitgliedern case-insensitive (409), max. 40 Zeichen. Audit `mitglied_registriert`, Antwort wie Login (Auto-Login) |
 | `GET /members/public` | Aktive Mitglieder `{id, name, color, role}[]` — für Login-Picker & Tresen-Kacheln |
 | `GET /categories` | **Nur aktive** Kategorien, sortiert nach sort_order |
 | `GET /settings` | `{clubName, logo}` — Branding für Login/Tresen |
@@ -173,6 +176,7 @@ Download-Links wie CSV nötig). Middleware: `requireAuth` (gültiges Token),
 | `DELETE /drinks/:id` | Undo: nur eigene Buchung, nur ≤ 60 s (`UNDO_WINDOW_MS`), sonst 403 |
 | `GET /me/summary` | `{today: Drink[], monthCounts: {categoryId, count}[]}` — „heute"/„Monat" in Berlin-Zeit |
 | `GET /me/history` | Eigene Buchungen, neueste zuerst, LIMIT 300 |
+| `GET /me/wrapped?year=` | „Club Wrapped": persönlicher Jahresrückblick (Total, Kategorien, aktive Tage, stärkster Tag, Lieblings-Wochentag, Nachteulen-Buchung, Club-Gesamtzahl + beliebteste Kategorie). **Bewusst keine Rankings/Vergleiche zwischen Mitgliedern** (Jugendschutz). Jahresgrenzen in Berlin-Zeit |
 
 ### Nur Vorstand (`/admin/...`)
 | Route | Zweck |
@@ -180,6 +184,7 @@ Download-Links wie CSV nötig). Middleware: `requireAuth` (gültiges Token),
 | `GET /admin/members` | Alle Mitglieder inkl. deaktivierter |
 | `POST /admin/members` `{name, pin, role?, color?}` | Anlegen (Audit) |
 | `PATCH /admin/members/:id` `{name?, role?, active?, color?, pin?}` | Ändern; `pin` = PIN-Reset (setzt auch failed_attempts/locked_until zurück). Eigenes Konto kann nicht deaktiviert/herabgestuft werden (400). Audit |
+| `DELETE /admin/members/:id` | **Finales Löschen** = Tombstone (`members.deleted_at`, active=0, PIN unbrauchbar). Konto verschwindet aus Login/Tresen/Verwaltung/Übersichten; Buchungen bleiben im Getränke-Log, in Stats, CSV und Abrechnung (Name + „(gelöscht)"-Marker). Eigenes Konto: 400. Audit `mitglied_geloescht`. Nicht umkehrbar (UI bietet es nur für deaktivierte Mitglieder an) |
 | `GET /admin/categories` | Alle Kategorien inkl. inaktiver |
 | `POST /admin/categories` / `PATCH /admin/categories/:id` | Pflege inkl. sort_order, free_text, active (Audit) |
 | `GET /admin/overview?from&to` | Matrix: pro Mitglied `{counts: {catId: n}, total}`. Inaktive nur, wenn sie Striche im Zeitraum haben |
@@ -187,7 +192,8 @@ Download-Links wie CSV nötig). Middleware: `requireAuth` (gültiges Token),
 | `POST /admin/drinks` `{memberId, categoryId, note?, createdAt?}` | Strich nachtragen, source='admin' (Audit) |
 | `DELETE /admin/drinks/:id` | Stornieren = Soft-Delete mit deleted_by=Admin (Audit inkl. Original-Zeit). Jederzeit möglich, kein Zeitfenster |
 | `POST /admin/drinks/:id/restore` | Stornierung aufheben: deleted_at/deleted_by → NULL (Audit `strich_wiederhergestellt`). 404 wenn nicht storniert |
-| `GET /admin/log?from&to` | **Getränke-Log**: ALLE Buchungen inkl. stornierter (`deletedAt`, `deletedByName`), LIMIT 1000 |
+| `GET /admin/log?from&to` | **Getränke-Log**: ALLE Buchungen inkl. stornierter (`deletedAt`, `deletedByName`) und von gelöschten Mitgliedern (`memberDeleted`), LIMIT 1000 |
+| `GET /admin/billing?from&to` | **Abrechnung**: pro Mitglied Striche je Kategorie + `amountCents` (Striche × `categories.price`). Enthält auch deaktivierte/gelöschte Mitglieder mit Buchungen im Zeitraum (offene Rechnungen). Kategorien ohne Preis zählen nur in der Strichsumme |
 | `GET /admin/stats?from&to` | `{perDay: [{date:"YYYY-MM-DD", counts}], topDrinkers (Top 15), heatmap[7][24] (Mo–So × 0–23 Berlin-Zeit), total}` |
 | `GET /admin/audit` | Audit-Einträge, LIMIT 300 |
 | `GET /admin/export.csv?from&to&token=` | CSV: `Datum;Uhrzeit;Mitglied;Kategorie;Notiz;Quelle`, Semikolon-getrennt, CRLF, UTF-8-BOM (Excel-kompatibel), Berlin-Zeit |
@@ -286,8 +292,15 @@ State-Machine in `Tresen.tsx`: `members → pin → categories → (note) → do
 
 ### 6.3 Admin
 - `AdminLayout`: Sidebar (auf schmalen Screens nur Anfangsbuchstaben). Navigation:
-  Strichliste, Getränke-Log, Statistiken, Mitglieder, Kategorien, Audit-Log,
-  Einstellungen. **Neue Admin-Seite = Eintrag in `nav[]` + Route in `App.tsx`.**
+  Strichliste, Getränke-Log, Abrechnung, Statistiken, Mitglieder, Kategorien,
+  Audit-Log, Einstellungen. **Neue Admin-Seite = Eintrag in `nav[]` + Lazy-Route
+  in `App.tsx`** (alle Admin-Seiten + Wrapped sind `React.lazy`-Chunks; das
+  Haupt-Bundle der Mitglieder-App bleibt dadurch bei ~265 KB statt ~670 KB —
+  Recharts steckt im Stats-Chunk).
+- **Abrechnung**: Jahres-Auswahl (laufendes Jahr − 3), Matrix Mitglied×Kategorie
+  mit Stückpreisen im Header, €-Summe pro Mitglied + Gesamt, Drucken-Button
+  (`window.print`). Gelöschte Mitglieder erscheinen mit „(gelöscht)", solange sie
+  Buchungen im Jahr haben. Hinweis-Banner, wenn keine Preise gepflegt sind.
 - `RangeFilter` (geteilte Komponente): Presets Heute/Woche (ab Montag)/Monat +
   Custom-Datumsbereich (`to` wird +1 Tag exklusiv gerechnet). Liefert Epoch-ms.
 - **Strichliste**: Matrix Mitglied×Kategorie (Spalten = aktive Kategorien), Klick
@@ -307,7 +320,13 @@ State-Machine in `Tresen.tsx`: `members → pin → categories → (note) → do
   Prozent-Liste · Top-15 mit Medaillen · Heatmap Wochentag×Stunde mit Zeilensummen.
   Leerzustand wenn total=0.
 - **Mitglieder**: Anlegen (Name, PIN, Rolle, Avatar-Farbe), Rolle ändern,
-  aktivieren/deaktivieren, PIN-Reset (prompt, 4 Ziffern).
+  aktivieren/deaktivieren, PIN-Reset (prompt, 4 Ziffern). **Endgültig löschen**
+  (🗑) erscheint nur bei deaktivierten Mitgliedern (bewusste Zwei-Stufen-Hürde)
+  und erklärt im confirm, dass Buchungen erhalten bleiben.
+- **Wrapped** (`/wrapped`, Mitglieder-Feature, verlinkt im Profil): Jahresrückblick
+  als gestaffelte Karten (eigene Striche, Getränk des Jahres, aktive Tage,
+  stärkster Tag, Lieblings-Wochentag, Nachteulen-Moment, Club-Gesamt). Jahr
+  umschaltbar (aktuell/Vorjahr). Eigener Lazy-Chunk, eigener Leerzustand.
 - **Kategorien**: Inline-Edit (Name onBlur, Farbe color-input, Textfeld-Checkbox,
   ▲▼ tauscht sort_order beider Nachbarn), Anlegen, aktivieren/deaktivieren.
 - **Einstellungen**: Clubname, Logo (FileReader → Data-URL, max 300 KB, PNG/JPG/SVG/WebP).
@@ -414,8 +433,6 @@ curl -s -X POST localhost:4173/api/tresen/book -H 'Content-Type: application/jso
 
 ## 9. Bekannte Grenzen / Backlog
 
-- **Bundle**: Recharts steckt im Haupt-Bundle (~680 KB minified). Bei Bedarf
-  Admin-Routen per `React.lazy` splitten — Mitglieder-Handys laden dann deutlich weniger.
 - **Kein Paging**: Audit (300), History (300), Drilldown (500), Log (1000) sind
   LIMIT-begrenzt; bei einem 40-Personen-Club reicht das lange.
 - **Rollenwechsel** greift erst nach Token-Ablauf/Re-Login (§4.3).
@@ -441,7 +458,7 @@ curl -s -X POST localhost:4173/api/tresen/book -H 'Content-Type: application/jso
 | Live-URL | https://getraenke-club.timgruszczynski422.workers.dev |
 | Worker-Name | `getraenke-club` (Cloudflare-Account von timgruszczynski422@gmail.com) |
 | D1-Datenbank | `getraenke-club`, ID `a04af21a-eee9-4c0a-bc2b-86b8ee377ec5`, Region EEUR |
-| Migrationen remote | `0001_init.sql` angewendet |
+| Migrationen remote | `0001_init.sql`, `0002_billing_und_loeschen.sql` angewendet |
 | Secrets | `AUTH_SECRET` als Cloudflare-Secret gesetzt (48 Zufallsbytes, base64url) |
 | Ersteinrichtung | erledigt — Vorstandskonto „tim" existiert; needsSetup=false |
 | Tresen-Tablet | `/tresen` öffnen und „Zum Startbildschirm hinzufügen" (Vollbild-PWA) |
@@ -477,6 +494,10 @@ vorher `npm run db:migrate:remote` (und lokal `db:migrate:local`).
 7. **Storno/Restore im Getränke-Log** (+ `POST /admin/drinks/:id/restore`,
    Audit `strich_wiederhergestellt`), Storno-Button als ✕-Icon.
 8. **GitHub-Push** als v2 (siehe oben).
+9. **Feature-Paket** (Migration 0002): Jahresabrechnung mit Kategoriepreisen,
+   Club-Code für die Registrierung, „Club Wrapped"-Jahresrückblick,
+   Bundle-Splitting (Admin/Wrapped lazy), finales Mitglieder-Löschen mit
+   Log-Erhalt (Tombstone `members.deleted_at`).
 
 ### Lokale Entwicklungsumgebung (dieser Mac)
 - Lokale Test-DB enthält Spieldaten (Mitglieder „tim"/„Jimmy W", ~200 Buchungen,

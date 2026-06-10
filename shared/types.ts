@@ -22,6 +22,8 @@ export interface Category {
   sortOrder: number;
   freeText: boolean;
   active: boolean;
+  /** Preis in Cent; nur in Admin-Antworten enthalten. null = kein Preis hinterlegt */
+  price?: number | null;
 }
 
 export interface Drink {
@@ -59,6 +61,35 @@ export interface StatsResponse {
 export interface LogEntry extends Drink {
   deletedAt: number | null;
   deletedByName: string | null;
+  memberDeleted: boolean;
+}
+
+export interface BillingRow {
+  memberId: number;
+  memberName: string;
+  memberDeleted: boolean;
+  counts: Record<number, number>;
+  total: number;
+  /** Summe in Cent ueber alle Kategorien mit Preis */
+  amountCents: number;
+}
+
+export interface BillingResponse {
+  categories: { id: number; name: string; color: string; price: number | null }[];
+  rows: BillingRow[];
+}
+
+export interface WrappedData {
+  year: number;
+  myTotal: number;
+  perCategory: { name: string; color: string; count: number }[];
+  activeDays: number;
+  busiestDay: { date: string; count: number } | null;
+  busiestWeekday: number | null; // 0 = Mo
+  nightOwl: { date: string; time: string } | null;
+  firstDrink: number | null;
+  clubTotal: number;
+  clubTopCategory: string | null;
 }
 
 export interface AuditEntry {
@@ -73,6 +104,8 @@ export interface AuditEntry {
 export interface ClubSettings {
   clubName: string;
   logo: string | null; // data-URL
+  /** true wenn ein Club-Code fuer die Registrierung gesetzt ist (der Code selbst wird nie ausgeliefert) */
+  signupCodeRequired: boolean;
 }
 
 export interface QueuedBooking {

@@ -43,6 +43,12 @@ interface MemberRow {
   failed_attempts: number;
   locked_until: number | null;
   created_at: number;
+  deleted_at: number | null;
+}
+
+async function getSetting(db: D1Database, key: string): Promise<string | null> {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{ value: string }>();
+  return row?.value ?? null;
 }
 
 /** Prueft PIN inkl. Rate-Limiting. Gibt das Mitglied zurueck oder eine Fehlermeldung. */
@@ -52,7 +58,7 @@ async function checkPin(
   pin: string
 ): Promise<{ member: MemberRow } | { error: string; locked?: boolean }> {
   const member = await db
-    .prepare("SELECT * FROM members WHERE id = ? AND active = 1")
+    .prepare("SELECT * FROM members WHERE id = ? AND active = 1 AND deleted_at IS NULL")
     .bind(memberId)
     .first<MemberRow>();
   if (!member) return { error: "Mitglied nicht gefunden" };
@@ -167,19 +173,30 @@ app.post("/setup", async (c) => {
 // Selbst-Registrierung: legt IMMER ein normales Mitglied an (Rolle ist nicht
 // vom Client waehlbar). Erst moeglich, wenn die Ersteinrichtung gelaufen ist.
 app.post("/signup", async (c) => {
-  const { name, pin, color } = await c.req.json<{ name?: string; pin?: string; color?: string }>();
+  const { name, pin, color, code } = await c.req.json<{
+    name?: string;
+    pin?: string;
+    color?: string;
+    code?: string;
+  }>();
   const trimmed = name?.trim() ?? "";
   if (!trimmed || !pin || !/^\d{4}$/.test(pin)) {
     return err(c, 400, "Name und 4-stellige PIN erforderlich");
   }
   if (trimmed.length > 40) return err(c, 400, "Name zu lang (max. 40 Zeichen)");
 
+  // Optionaler Club-Code (vom Vorstand in den Einstellungen gesetzt)
+  const signupCode = (await getSetting(c.env.DB, "signupCode"))?.trim();
+  if (signupCode && (code ?? "").trim().toLowerCase() !== signupCode.toLowerCase()) {
+    return err(c, 403, "Falscher Club-Code – frag beim Vorstand nach");
+  }
+
   const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM members").first<{ n: number }>();
   if ((count?.n ?? 0) === 0) {
     return err(c, 409, "Bitte zuerst die Ersteinrichtung unter /setup durchführen");
   }
   const existing = await c.env.DB.prepare(
-    "SELECT id FROM members WHERE active = 1 AND lower(name) = lower(?)"
+    "SELECT id FROM members WHERE active = 1 AND deleted_at IS NULL AND lower(name) = lower(?)"
   )
     .bind(trimmed)
     .first<{ id: number }>();
@@ -206,7 +223,7 @@ app.post("/signup", async (c) => {
 
 app.get("/members/public", async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, name, color, role FROM members WHERE active = 1 ORDER BY name COLLATE NOCASE"
+    "SELECT id, name, color, role FROM members WHERE active = 1 AND deleted_at IS NULL ORDER BY name COLLATE NOCASE"
   ).all();
   return c.json(rows.results);
 });
@@ -223,7 +240,12 @@ app.get("/categories", async (c) => {
 app.get("/settings", async (c) => {
   const rows = await c.env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
   const map = Object.fromEntries(rows.results.map((r) => [r.key, r.value]));
-  return c.json({ clubName: map.clubName ?? "Jugendclub", logo: map.logo ?? null });
+  return c.json({
+    clubName: map.clubName ?? "Jugendclub",
+    logo: map.logo ?? null,
+    // Nur das Flag, nie der Code selbst
+    signupCodeRequired: !!map.signupCode?.trim(),
+  });
 });
 
 // ---------- Login & Konto ----------
@@ -249,7 +271,9 @@ app.post("/auth/login", async (c) => {
 
 app.get("/auth/me", requireAuth, async (c) => {
   const auth = c.get("auth");
-  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ? AND active = 1")
+  const member = await c.env.DB.prepare(
+    "SELECT * FROM members WHERE id = ? AND active = 1 AND deleted_at IS NULL"
+  )
     .bind(auth.sub)
     .first<MemberRow>();
   if (!member) return err(c, 401, "Konto nicht mehr aktiv");
@@ -403,6 +427,78 @@ app.get("/me/history", requireAuth, async (c) => {
   return c.json(rows.results);
 });
 
+// "Club Wrapped": persoenlicher Jahresrueckblick + zwei Club-Gesamtzahlen.
+// Bewusst KEINE Vergleiche/Rankings zwischen Mitgliedern (Jugendschutz-Gedanke).
+app.get("/me/wrapped", requireAuth, async (c) => {
+  const auth = c.get("auth");
+  const yearParam = parseInt(c.req.query("year") ?? "", 10);
+  const year = Number.isFinite(yearParam) ? yearParam : new Date().getFullYear();
+  // Jahresgrenzen in Berlin-Zeit: 1. Januar ist immer Winterzeit (UTC+1)
+  const from = Date.UTC(year - 1, 11, 31, 23, 0, 0);
+  const to = Date.UTC(year, 11, 31, 23, 0, 0);
+
+  const mine = await c.env.DB.prepare(
+    `SELECT d.created_at AS createdAt, cat.name, cat.color
+     FROM drinks d JOIN categories cat ON cat.id = d.category_id
+     WHERE d.deleted_at IS NULL AND d.member_id = ? AND d.created_at >= ? AND d.created_at < ?`
+  )
+    .bind(auth.sub, from, to)
+    .all<{ createdAt: number; name: string; color: string }>();
+
+  const perCategoryMap = new Map<string, { color: string; count: number }>();
+  const perDay = new Map<string, number>();
+  const perWeekday = Array(7).fill(0) as number[];
+  let nightOwl: { date: string; time: string; score: number } | null = null;
+  let firstDrink: number | null = null;
+
+  for (const d of mine.results) {
+    const cat = perCategoryMap.get(d.name) ?? { color: d.color, count: 0 };
+    cat.count++;
+    perCategoryMap.set(d.name, cat);
+    const date = berlinDate(d.createdAt);
+    perDay.set(date, (perDay.get(date) ?? 0) + 1);
+    perWeekday[berlinWeekday(d.createdAt)]++;
+    // "Nachteule": am weitesten in die Nacht (18:00 = Abendbeginn, 17:59 = Maximum)
+    const hour = berlinHour(d.createdAt);
+    const score = ((hour - 18 + 24) % 24) * 60 + (d.createdAt % 3_600_000) / 60_000;
+    if (!nightOwl || score > nightOwl.score) {
+      nightOwl = { date, time: berlinTime(d.createdAt), score };
+    }
+    if (firstDrink === null || d.createdAt < firstDrink) firstDrink = d.createdAt;
+  }
+
+  let busiestDay: { date: string; count: number } | null = null;
+  for (const [date, count] of perDay) {
+    if (!busiestDay || count > busiestDay.count) busiestDay = { date, count };
+  }
+  const myTotal = mine.results.length;
+  const maxWeekday = Math.max(...perWeekday);
+
+  const club = await c.env.DB.prepare(
+    `SELECT cat.name, COUNT(*) AS n
+     FROM drinks d JOIN categories cat ON cat.id = d.category_id
+     WHERE d.deleted_at IS NULL AND d.created_at >= ? AND d.created_at < ?
+     GROUP BY cat.id ORDER BY n DESC`
+  )
+    .bind(from, to)
+    .all<{ name: string; n: number }>();
+
+  return c.json({
+    year,
+    myTotal,
+    perCategory: [...perCategoryMap.entries()]
+      .map(([name, v]) => ({ name, color: v.color, count: v.count }))
+      .sort((a, b) => b.count - a.count),
+    activeDays: perDay.size,
+    busiestDay,
+    busiestWeekday: myTotal > 0 ? perWeekday.indexOf(maxWeekday) : null,
+    nightOwl: nightOwl ? { date: nightOwl.date, time: nightOwl.time } : null,
+    firstDrink,
+    clubTotal: club.results.reduce((a, r) => a + r.n, 0),
+    clubTopCategory: club.results[0]?.name ?? null,
+  });
+});
+
 // ---------- Tresenmodus ----------
 
 app.post("/tresen/book", async (c) => {
@@ -455,7 +551,7 @@ app.post("/tresen/undo", async (c) => {
 
 app.get("/admin/members", requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, name, color, role, active, created_at AS createdAt FROM members ORDER BY active DESC, name COLLATE NOCASE"
+    "SELECT id, name, color, role, active, created_at AS createdAt FROM members WHERE deleted_at IS NULL ORDER BY active DESC, name COLLATE NOCASE"
   ).all();
   return c.json(rows.results.map((r) => ({ ...r, active: !!r.active })));
 });
@@ -493,7 +589,7 @@ app.patch("/admin/members/:id", requireAdmin, async (c) => {
     color?: string;
     pin?: string;
   }>();
-  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ?")
+  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ? AND deleted_at IS NULL")
     .bind(id)
     .first<MemberRow>();
   if (!member) return err(c, 404, "Mitglied nicht gefunden");
@@ -532,11 +628,32 @@ app.patch("/admin/members/:id", requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+// Finales Loeschen: Tombstone (deleted_at) statt echtem DELETE, damit die
+// historischen Striche im Getraenke-Log ihren Namen behalten. Das Konto
+// verschwindet aus Login, Tresen, Verwaltung und Uebersichten; die PIN wird
+// unbrauchbar gemacht.
+app.delete("/admin/members/:id", requireAdmin, async (c) => {
+  const auth = c.get("auth");
+  const id = parseInt(c.req.param("id") ?? "", 10);
+  if (id === auth.sub) return err(c, 400, "Du kannst dein eigenes Konto nicht löschen");
+  const member = await c.env.DB.prepare("SELECT * FROM members WHERE id = ? AND deleted_at IS NULL")
+    .bind(id)
+    .first<MemberRow>();
+  if (!member) return err(c, 404, "Mitglied nicht gefunden");
+  await c.env.DB.prepare(
+    "UPDATE members SET deleted_at = ?, active = 0, role = 'mitglied', pin_hash = 'geloescht', pin_salt = '' WHERE id = ?"
+  )
+    .bind(Date.now(), id)
+    .run();
+  await audit(c.env.DB, auth.sub, "mitglied_geloescht", { memberId: id, name: member.name });
+  return c.json({ ok: true });
+});
+
 // ---------- Admin: Kategorien ----------
 
 app.get("/admin/categories", requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, name, color, sort_order AS sortOrder, free_text AS freeText, active FROM categories ORDER BY sort_order, id"
+    "SELECT id, name, color, sort_order AS sortOrder, free_text AS freeText, active, price FROM categories ORDER BY sort_order, id"
   ).all();
   return c.json(rows.results.map((r) => ({ ...r, freeText: !!r.freeText, active: !!r.active })));
 });
@@ -568,14 +685,20 @@ app.patch("/admin/categories/:id", requireAdmin, async (c) => {
     sortOrder?: number;
     freeText?: boolean;
     active?: boolean;
+    price?: number | null;
   }>();
   const cat = await c.env.DB.prepare("SELECT * FROM categories WHERE id = ?")
     .bind(id)
-    .first<{ id: number; name: string; color: string; sort_order: number; free_text: number; active: number }>();
+    .first<{ id: number; name: string; color: string; sort_order: number; free_text: number; active: number; price: number | null }>();
   if (!cat) return err(c, 404, "Kategorie nicht gefunden");
 
+  // price: Zahl in Cent setzt, null loescht, undefined laesst unveraendert
+  let price = cat.price;
+  if (body.price === null) price = null;
+  else if (typeof body.price === "number" && body.price >= 0) price = Math.round(body.price);
+
   await c.env.DB.prepare(
-    "UPDATE categories SET name = ?, color = ?, sort_order = ?, free_text = ?, active = ? WHERE id = ?"
+    "UPDATE categories SET name = ?, color = ?, sort_order = ?, free_text = ?, active = ?, price = ? WHERE id = ?"
   )
     .bind(
       body.name?.trim() || cat.name,
@@ -583,6 +706,7 @@ app.patch("/admin/categories/:id", requireAdmin, async (c) => {
       typeof body.sortOrder === "number" ? body.sortOrder : cat.sort_order,
       typeof body.freeText === "boolean" ? (body.freeText ? 1 : 0) : cat.free_text,
       typeof body.active === "boolean" ? (body.active ? 1 : 0) : cat.active,
+      price,
       id
     )
     .run();
@@ -602,7 +726,7 @@ app.get("/admin/overview", requireAdmin, async (c) => {
     .bind(from, to)
     .all<{ memberId: number; categoryId: number; n: number }>();
   const members = await c.env.DB.prepare(
-    "SELECT id, name, active FROM members ORDER BY name COLLATE NOCASE"
+    "SELECT id, name, active FROM members WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE"
   ).all<{ id: number; name: string; active: number }>();
 
   const byMember = new Map<number, Record<number, number>>();
@@ -745,7 +869,8 @@ app.get("/admin/log", requireAdmin, async (c) => {
     `SELECT d.id, d.member_id AS memberId, m.name AS memberName,
             d.category_id AS categoryId, cat.name AS categoryName, cat.color AS categoryColor,
             d.note, d.source, d.created_at AS createdAt,
-            d.deleted_at AS deletedAt, del.name AS deletedByName
+            d.deleted_at AS deletedAt, del.name AS deletedByName,
+            (m.deleted_at IS NOT NULL) AS memberDeleted
      FROM drinks d
      JOIN members m ON m.id = d.member_id
      JOIN categories cat ON cat.id = d.category_id
@@ -755,7 +880,57 @@ app.get("/admin/log", requireAdmin, async (c) => {
   )
     .bind(from, to)
     .all();
-  return c.json(rows.results);
+  return c.json(rows.results.map((r) => ({ ...r, memberDeleted: !!r.memberDeleted })));
+});
+
+// Jahresabrechnung: Striche x Kategoriepreis pro Mitglied. Geloeschte und
+// deaktivierte Mitglieder erscheinen, wenn sie Striche im Zeitraum haben
+// (offene Rechnungen verschwinden nicht).
+app.get("/admin/billing", requireAdmin, async (c) => {
+  const { from, to } = parseRange(c);
+  const counts = await c.env.DB.prepare(
+    `SELECT d.member_id AS memberId, m.name AS memberName,
+            (m.deleted_at IS NOT NULL) AS memberDeleted,
+            d.category_id AS categoryId, COUNT(*) AS n
+     FROM drinks d JOIN members m ON m.id = d.member_id
+     WHERE d.deleted_at IS NULL AND d.created_at >= ? AND d.created_at < ?
+     GROUP BY d.member_id, d.category_id`
+  )
+    .bind(from, to)
+    .all<{ memberId: number; memberName: string; memberDeleted: number; categoryId: number; n: number }>();
+  const cats = await c.env.DB.prepare(
+    "SELECT id, name, color, price FROM categories ORDER BY sort_order, id"
+  ).all<{ id: number; name: string; color: string; price: number | null }>();
+
+  const priceById = new Map(cats.results.map((cat) => [cat.id, cat.price]));
+  const byMember = new Map<number, { memberName: string; memberDeleted: boolean; counts: Record<number, number> }>();
+  for (const row of counts.results) {
+    const rec = byMember.get(row.memberId) ?? {
+      memberName: row.memberName,
+      memberDeleted: !!row.memberDeleted,
+      counts: {},
+    };
+    rec.counts[row.categoryId] = row.n;
+    byMember.set(row.memberId, rec);
+  }
+  const usedCatIds = new Set(counts.results.map((r) => r.categoryId));
+  const rows = [...byMember.entries()]
+    .map(([memberId, rec]) => {
+      let total = 0;
+      let amountCents = 0;
+      for (const [catId, n] of Object.entries(rec.counts)) {
+        total += n;
+        const price = priceById.get(Number(catId));
+        if (typeof price === "number") amountCents += n * price;
+      }
+      return { memberId, ...rec, total, amountCents };
+    })
+    .sort((a, b) => a.memberName.localeCompare(b.memberName, "de"));
+
+  return c.json({
+    categories: cats.results.filter((cat) => usedCatIds.has(cat.id)),
+    rows,
+  });
 });
 
 // ---------- Admin: Audit & Export ----------
@@ -803,7 +978,11 @@ app.get("/admin/export.csv", requireAdmin, async (c) => {
 
 app.put("/admin/settings", requireAdmin, async (c) => {
   const auth = c.get("auth");
-  const { clubName, logo } = await c.req.json<{ clubName?: string; logo?: string | null }>();
+  const { clubName, logo, signupCode } = await c.req.json<{
+    clubName?: string;
+    logo?: string | null;
+    signupCode?: string | null;
+  }>();
   if (typeof logo === "string" && logo.length > 400_000) {
     return err(c, 400, "Logo zu groß (max. ~300 KB)");
   }
@@ -814,8 +993,14 @@ app.put("/admin/settings", requireAdmin, async (c) => {
   if (typeof clubName === "string" && clubName.trim()) batch.push(upsert.bind("clubName", clubName.trim()));
   if (typeof logo === "string") batch.push(upsert.bind("logo", logo));
   if (logo === null) batch.push(c.env.DB.prepare("DELETE FROM settings WHERE key = 'logo'"));
+  if (typeof signupCode === "string" && signupCode.trim()) batch.push(upsert.bind("signupCode", signupCode.trim()));
+  if (signupCode === null) batch.push(c.env.DB.prepare("DELETE FROM settings WHERE key = 'signupCode'"));
   if (batch.length) await c.env.DB.batch(batch);
-  await audit(c.env.DB, auth.sub, "einstellungen_geaendert", { clubName, logoGeaendert: logo !== undefined });
+  await audit(c.env.DB, auth.sub, "einstellungen_geaendert", {
+    clubName,
+    logoGeaendert: logo !== undefined,
+    clubCodeGeaendert: signupCode !== undefined,
+  });
   return c.json({ ok: true });
 });
 

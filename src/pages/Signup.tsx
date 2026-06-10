@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { AVATAR_COLORS, initials } from "../lib/format";
-import type { PublicMember } from "../../shared/types";
+import type { ClubSettings, PublicMember } from "../../shared/types";
 
 export function Signup() {
   const navigate = useNavigate();
@@ -11,6 +11,14 @@ export function Signup() {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
+  const [code, setCode] = useState("");
+  const [codeRequired, setCodeRequired] = useState(false);
+
+  useEffect(() => {
+    api<ClubSettings>("/settings")
+      .then((s) => setCodeRequired(s.signupCodeRequired))
+      .catch(() => {});
+  }, []);
   const [color, setColor] = useState(
     () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
   );
@@ -41,7 +49,7 @@ export function Signup() {
     try {
       const res = await api<{ token: string; member: PublicMember }>("/signup", {
         method: "POST",
-        body: { name, pin, color },
+        body: { name, pin, color, code },
       });
       setSession(res.token, res.member);
       navigate("/");
@@ -70,6 +78,15 @@ export function Signup() {
         />
         {pinInput(pin, setPin, "PIN wählen (4 Ziffern)")}
         {pinInput(pin2, setPin2, "PIN wiederholen")}
+        {codeRequired && (
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Club-Code (gibt's beim Vorstand)"
+            required
+            className="rounded-xl border border-line bg-surface px-4 py-3 outline-none placeholder:text-muted focus:border-amber/60"
+          />
+        )}
 
         <div className="flex items-center gap-3">
           <div

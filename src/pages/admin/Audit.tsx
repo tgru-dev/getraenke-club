@@ -8,6 +8,7 @@ const ACTION_LABELS: Record<string, string> = {
   mitglied_angelegt: "Mitglied angelegt",
   mitglied_registriert: "Selbst registriert",
   mitglied_geaendert: "Mitglied geändert",
+  mitglied_geloescht: "Mitglied endgültig gelöscht",
   kategorie_angelegt: "Kategorie angelegt",
   kategorie_geaendert: "Kategorie geändert",
   strich_nachgetragen: "Strich nachgetragen",

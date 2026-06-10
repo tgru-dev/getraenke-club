@@ -77,6 +77,22 @@ export function Kategorien() {
               onBlur={(e) => e.target.value.trim() !== c.name && void patch(c.id, { name: e.target.value.trim() })}
               className="min-w-40 flex-1 rounded-xl border border-line bg-raised px-3 py-2"
             />
+            <label className="flex items-center gap-1 text-sm text-muted" title="Preis für die Abrechnung (leer = ohne Preis)">
+              <input
+                key={`price-${c.id}-${c.price ?? "none"}`}
+                defaultValue={typeof c.price === "number" ? (c.price / 100).toFixed(2).replace(".", ",") : ""}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim().replace(",", ".");
+                  const parsed = raw === "" ? null : Math.round(parseFloat(raw) * 100);
+                  if (parsed !== null && !Number.isFinite(parsed)) return;
+                  if (parsed !== (c.price ?? null)) void patch(c.id, { price: parsed });
+                }}
+                placeholder="–,––"
+                inputMode="decimal"
+                className="w-20 rounded-xl border border-line bg-raised px-2 py-2 text-right font-mono"
+              />
+              €
+            </label>
             <label className="flex items-center gap-1.5 text-sm text-muted" title="Beim Buchen wird ein Textfeld abgefragt">
               <input
                 type="checkbox"
@@ -109,6 +125,7 @@ export function Kategorien() {
       </form>
       <p className="text-sm text-muted">
         Deaktivierte Kategorien verschwinden aus den Buchungs-Ansichten, historische Striche bleiben erhalten.
+        Der Preis wird nur für die Abrechnung verwendet — Mitglieder sehen keine Beträge.
       </p>
     </div>
   );
